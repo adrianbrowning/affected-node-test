@@ -170,11 +170,20 @@ importers:
         specifier: 8.19.0
         version: 8.19.0
     devDependencies:
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
       mdcode-ts:
         specifier: 0.1.0
         version: 0.1.0(bare-buffer@3.7.1)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
 
 packages:
+
+  '@types/node@26.6.6':
+    resolution: {integrity: sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==}
 
   acorn@8.19.0:
     resolution: {integrity: sha512-oJlA3XiRm7Cyk6qFD2Jn8ak9B7jSy0qy00ADO3+8dpT0LSjFihQYv4C02LFCSYJV3Q37xYwwRy5m+IpIiUzqWw==}
@@ -261,7 +270,19 @@ packages:
   text-decoder@1.2.7:
     resolution: {integrity: sha512-vlLytXkeP4xvEq2otHeJfSQIRyWxo/oZGEbXrtEEF9Hnmrdly59sUbzZ/QgyWuLYHctCHxFF4tRQZNQ9k60ExQ==}
 
+  typescript@5.9.3:
+    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  undici-types@8.9.0:
+    resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
+
 snapshots:
+
+  '@types/node@26.6.6':
+    dependencies:
+      undici-types: 8.9.0
 
   acorn@8.19.0: {}
 
@@ -356,3 +377,7 @@ snapshots:
       b4a: 1.9.0
     transitivePeerDependencies:
       - react-native-b4a
+
+  typescript@5.9.3: {}
+
+  undici-types@8.9.0: {}

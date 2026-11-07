@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import test from 'node:test';
 
-import { createOutputBuffer } from '../src/output-buffer.mjs';
+import { createOutputBuffer } from '../src/output-buffer.ts';
 
 function capture() {
   let value = '';

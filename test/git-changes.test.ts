@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { getGitChanges } from '../src/git-changes.mjs';
+import { getGitChanges } from '../src/git-changes.ts';
 
-function git(cwd, ...args) {
+function git(cwd: string, ...args: string[]) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
 }

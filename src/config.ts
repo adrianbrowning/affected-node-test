@@ -11,7 +11,7 @@ const excludedDirectories = new Set([
   'node_modules',
 ]);
 
-function isConfigurationFile(path) {
+function isConfigurationFile(path: string) {
   const name = basename(path);
   return name === 'package.json' ||
     name === 'package-lock.json' ||
@@ -25,7 +25,7 @@ function isConfigurationFile(path) {
     /^tsconfig[^/]*\.json$/.test(name);
 }
 
-function configurationFiles(root, directory = root, output = []) {
+function configurationFiles(root: string, directory = root, output: string[] = []) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory() && excludedDirectories.has(entry.name)) continue;
     const path = join(directory, entry.name);
@@ -35,7 +35,7 @@ function configurationFiles(root, directory = root, output = []) {
   return output;
 }
 
-export function configurationFingerprint(root, env = process.env) {
+export function configurationFingerprint(root: string, env: NodeJS.ProcessEnv = process.env) {
   const hash = createHash('sha256');
   hash.update(`NODE_OPTIONS\0${env.NODE_OPTIONS ?? ''}\0`);
   for (const path of configurationFiles(root).sort()) {

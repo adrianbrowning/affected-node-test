@@ -2,7 +2,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
 
-export function writeJsonAtomically(path, value) {
+export function writeJsonAtomically(path: string, value: unknown) {
   mkdirSync(dirname(path), { recursive: true });
   const temporaryPath = join(
     dirname(path),

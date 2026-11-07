@@ -2,6 +2,6 @@ cd example
 git init
 git add .
 git commit -m initial
-node ../bin/affected-node-test.mjs baseline
+node ../bin/affected-node-test.ts baseline
 printf '\n// modified\n' >> src/math.mjs
-node ../bin/affected-node-test.mjs affected HEAD
+node ../bin/affected-node-test.ts affected HEAD

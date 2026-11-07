@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseConcurrency } from '../src/concurrency.mjs';
+import { parseConcurrency } from '../src/concurrency.ts';
 
 test('percentage concurrency floors deterministically with a minimum of one', () => {
   assert.equal(parseConcurrency('50%', 8), 4);

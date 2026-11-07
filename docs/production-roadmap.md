@@ -92,7 +92,7 @@ These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior 
 
 - [x] Run only new or unrecorded tests when inventory grows
 - [x] Store durations and schedule historically slow tests first
-- [ ] Add [`last-failed`](https://github.com/adrianbrowning/affected-node-test/issues/11)
+- [x] Add [`last-failed`](https://github.com/adrianbrowning/affected-node-test/issues/11)
 - [x] Add [percentage concurrency](https://github.com/adrianbrowning/affected-node-test/issues/13)
 - [x] Add optional [workspace project filtering](https://github.com/adrianbrowning/affected-node-test/issues/14)
 - [x] [Spill large buffered child output to temporary files](https://github.com/adrianbrowning/affected-node-test/issues/17)
@@ -101,7 +101,7 @@ These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior 
 ## Release readiness
 
 - [x] Initialize the final package directory as the repository root
-- [x] Add CI for Node 22.15, current LTS, and latest
+- [x] Build and test the Node 26 TypeScript development sources
 - [ ] [Test supported POSIX and Windows signal/process behavior](https://github.com/adrianbrowning/affected-node-test/issues/15)
 - [ ] [Finalize package metadata, license, changelog, and publishing policy](https://github.com/adrianbrowning/affected-node-test/issues/18)
 - [ ] [Run security, performance, and documentation reviews](https://github.com/adrianbrowning/affected-node-test/issues/16)

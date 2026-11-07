@@ -1,2 +1,3 @@
 .affected-tests/
+dist/
 node_modules/

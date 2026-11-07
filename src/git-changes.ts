@@ -1,25 +1,33 @@
 import { spawnSync } from 'node:child_process';
 import { resolve, sep } from 'node:path';
 
-const normal = (path) => path.split(sep).join('/');
+const normal = (path: string) => path.split(sep).join('/');
 
-function git(root, args, encoding = 'buffer') {
-  const result = spawnSync('git', args, { cwd: root, encoding });
+function gitBuffer(root: string, args: string[]) {
+  const result = spawnSync('git', args, { cwd: root });
   if (result.status !== 0) {
-    const stderr = Buffer.isBuffer(result.stderr) ? result.stderr.toString('utf8') : result.stderr;
+    const stderr = result.stderr.toString('utf8');
     throw new Error(`Git failed: git ${args.join(' ')}\n${stderr}`);
   }
   return result.stdout;
 }
 
-function validateGitRoot(root) {
-  const gitRoot = git(root, ['rev-parse', '--show-toplevel'], 'utf8').trim();
+function gitText(root: string, args: string[]) {
+  return gitBuffer(root, args).toString('utf8');
+}
+
+function validateGitRoot(root: string) {
+  const gitRoot = gitText(root, ['rev-parse', '--show-toplevel']).trim();
   if (resolve(gitRoot) !== resolve(root)) {
     throw new Error('Run affected from the Git repository root.');
   }
 }
 
-export function getGitChanges({ root, ref, exclude = () => false }) {
+export function getGitChanges({ root, ref, exclude = () => false }: {
+  exclude?: (path: string) => boolean;
+  ref?: string;
+  root: string;
+}): { files: string[]; noMergeBase?: false } | { noMergeBase: true } {
   validateGitRoot(root);
   let base = 'HEAD';
   if (ref) {
@@ -30,9 +38,9 @@ export function getGitChanges({ root, ref, exclude = () => false }) {
     }
     base = mergeBase.stdout.trim();
   }
-  const changed = git(root, ['diff', '--name-only', '-z', base, '--'])
+  const changed = gitBuffer(root, ['diff', '--name-only', '-z', base, '--'])
     .toString('utf8').split('\0').filter(Boolean);
-  const untracked = git(root, ['ls-files', '--others', '--exclude-standard', '-z'])
+  const untracked = gitBuffer(root, ['ls-files', '--others', '--exclude-standard', '-z'])
     .toString('utf8').split('\0').filter(Boolean);
   const files = [...new Set([...changed, ...untracked].map(normal))]
     .filter((path) => !exclude(path))

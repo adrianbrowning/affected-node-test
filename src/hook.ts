@@ -6,9 +6,9 @@ import { relative, isAbsolute, sep } from 'node:path';
 
 const log = process.env.AFFECTED_TESTS_EDGES_FILE;
 const root = process.env.AFFECTED_TESTS_ROOT;
-const inside = (p) => {
+const inside = (p: string, projectRoot: string) => {
   if (!isAbsolute(p)) return false;
-  const rel = relative(root, p);
+  const rel = relative(projectRoot, p);
   return rel === '' || (rel !== '..' && !rel.startsWith('..' + sep) && !isAbsolute(rel));
 };
 if (log && root) {
@@ -18,7 +18,7 @@ if (log && root) {
       if (context.parentURL?.startsWith('file:') && resolved.url?.startsWith('file:')) {
         const parent = fileURLToPath(context.parentURL);
         const child = fileURLToPath(resolved.url);
-        if (inside(parent) && inside(child)) {
+        if (inside(parent, root) && inside(child, root)) {
           appendFileSync(log, JSON.stringify([relative(root, parent), relative(root, child)]) + '\n');
         }
       }

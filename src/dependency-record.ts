@@ -1,10 +1,54 @@
 import { readFileSync } from 'node:fs';
-import { writeJsonAtomically } from './cache.mjs';
-import { repositoryFilesFingerprint } from './project-config.mjs';
+import { writeJsonAtomically } from './cache.ts';
+import { repositoryFilesFingerprint } from './project-config.ts';
+import type { DependencyEdge } from './dependency-graph.ts';
+import { isNodeError } from './errors.ts';
+
+export type DependencyGraph = Record<string, DependencyEdge[]>;
+export type FileState = { mtimeMs: number; size: number } | null;
+export type DependencyState = Record<string, FileState>;
+export type RecordMetadata = {
+  config: string;
+  conventionDependencies: string;
+  conventionDependencyFiles: string[];
+  environment: string;
+  environmentFiles: string[];
+  globalSetupDependencies: string;
+  globalSetupDependencyFiles: string[];
+  globalSetupFiles: string[];
+  node: string;
+  projectDependencies: string;
+  setupDependencies: string;
+  setupDependencyFiles: string[];
+  setupFiles: string[];
+};
+export type DependencyRecord = RecordMetadata & {
+  dependencyStates: Record<string, DependencyState>;
+  durations: Record<string, number>;
+  failedTests: string[];
+  graph: DependencyGraph;
+  tests: string[];
+  unresolvedStaticTests: string[];
+  version: number;
+};
+export type DependencyRunResult = {
+  completedTests: string[];
+  durations?: Record<string, number>;
+  failedTests: string[];
+  interrupted?: 'SIGINT' | 'SIGTERM';
+  resultGraph: DependencyGraph;
+  unresolvedStaticTests?: string[];
+};
+export type DependencyRunOutcome =
+  | { signal: 'SIGINT' | 'SIGTERM'; status: 'interrupted' }
+  | { status: 'failed' }
+  | { status: 'passed' };
 
 const recordVersion = 11;
 
-function isValidRecord(record) {
+function isValidRecord(value: unknown): value is DependencyRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
   if (!record || typeof record !== 'object' || Array.isArray(record) ||
       typeof record.config !== 'string' || !Array.isArray(record.tests) ||
       typeof record.projectDependencies !== 'string' ||
@@ -21,33 +65,40 @@ function isValidRecord(record) {
       !record.graph || typeof record.graph !== 'object' || Array.isArray(record.graph)) {
     return false;
   }
-  const testSet = new Set(record.tests);
-  return record.setupDependencyFiles.every((path) => typeof path === 'string') &&
-    record.setupFiles.every((path) => typeof path === 'string') &&
-    record.globalSetupDependencyFiles.every((path) => typeof path === 'string') &&
-    record.globalSetupFiles.every((path) => typeof path === 'string') &&
-    record.environmentFiles.every((path) => typeof path === 'string') &&
-    record.conventionDependencyFiles.every((path) => typeof path === 'string') &&
+  const tests = record.tests as unknown[];
+  const testSet = new Set(tests);
+  return (record.setupDependencyFiles as unknown[]).every((path) => typeof path === 'string') &&
+    (record.setupFiles as unknown[]).every((path) => typeof path === 'string') &&
+    (record.globalSetupDependencyFiles as unknown[]).every((path) => typeof path === 'string') &&
+    (record.globalSetupFiles as unknown[]).every((path) => typeof path === 'string') &&
+    (record.environmentFiles as unknown[]).every((path) => typeof path === 'string') &&
+    (record.conventionDependencyFiles as unknown[]).every((path) => typeof path === 'string') &&
     Object.values(record.dependencyStates).every((state) => state && typeof state === 'object' && !Array.isArray(state)) &&
-    Object.values(record.durations).every((duration) => Number.isFinite(duration) && duration >= 0) &&
-    record.failedTests.every((test) => typeof test === 'string') &&
-    record.unresolvedStaticTests.every((test) => typeof test === 'string' && testSet.has(test)) &&
-    record.tests.every((test) => typeof test === 'string' &&
-      Array.isArray(record.graph[test]) && record.graph[test].every((edge) =>
+    Object.values(record.durations).every((duration) => typeof duration === 'number' && Number.isFinite(duration) && duration >= 0) &&
+    (record.failedTests as unknown[]).every((test) => typeof test === 'string') &&
+    (record.unresolvedStaticTests as unknown[]).every((test) => typeof test === 'string' && testSet.has(test)) &&
+    tests.every((test) => typeof test === 'string' &&
+      Array.isArray((record.graph as Record<string, unknown>)[test]) && ((record.graph as Record<string, unknown[]>)[test]).every((edge) =>
         Array.isArray(edge) && edge.length === 2 && edge.every((part) => typeof part === 'string')));
 }
 
-function writeDependencyRecord(path, record) {
+function writeDependencyRecord(path: string, record: Omit<DependencyRecord, 'version'> | DependencyRecord) {
   writeJsonAtomically(path, { ...record, version: recordVersion });
 }
 
-export function applyDependencyRun(path, {
+export function applyDependencyRun(path: string, {
   dependencyStateForTest,
   metadataForGraph,
   previous,
   result,
   tests,
-}) {
+}: {
+  dependencyStateForTest: (graph: DependencyGraph, test: string) => DependencyState;
+  metadataForGraph: (graph: DependencyGraph) => RecordMetadata;
+  previous?: DependencyRecord;
+  result: DependencyRunResult;
+  tests: string[];
+}): DependencyRunOutcome {
   const {
     completedTests,
     failedTests,
@@ -93,15 +144,25 @@ export function applyDependencyRun(path, {
   return { status: 'failed' };
 }
 
-export function loadDependencyRecord(path, expected) {
+export function loadDependencyRecord(path: string, expected: {
+  config: string;
+  conventionDependencyFiles: string[];
+  environmentFiles: string[];
+  globalSetupFiles: string[];
+  node: string;
+  projectDependencies: string;
+  root: string;
+  setupFiles: string[];
+  tests: string[];
+}) {
   let source;
   try {
     source = readFileSync(path, 'utf8');
-  } catch (error) {
-    if (error.code === 'ENOENT') return { reason: 'No graph cache; running full suite.' };
+  } catch (error: unknown) {
+    if (isNodeError(error) && error.code === 'ENOENT') return { reason: 'No graph cache; running full suite.' };
     throw error;
   }
-  let record;
+  let record: unknown;
   try {
     record = JSON.parse(source);
   } catch {
@@ -120,7 +181,7 @@ export function loadDependencyRecord(path, expected) {
   if (record.projectDependencies !== expected.projectDependencies) {
     return { reason: 'Project dependencies changed since graph was built; running full suite.' };
   }
-  const fingerprintFiles = (paths) => repositoryFilesFingerprint(expected.root, paths);
+  const fingerprintFiles = (paths: string[]) => repositoryFilesFingerprint(expected.root, paths);
   if (JSON.stringify(record.environmentFiles) !== JSON.stringify(expected.environmentFiles) ||
       record.environment !== fingerprintFiles(record.environmentFiles)) {
     return { reason: 'Environment files changed since graph was built; running full suite.' };

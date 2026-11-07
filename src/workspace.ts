@@ -1,16 +1,36 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { loadProjectConfig, matchesPatterns } from './project-config.mjs';
-import { getGitChanges } from './git-changes.mjs';
-import { selectionProvider } from './selection-document.mjs';
-import { watchReadyMessageType } from './watch-protocol.mjs';
+import type { Readable, Writable } from 'node:stream';
+import { loadProjectConfig, matchesPatterns } from './project-config.ts';
+import { getGitChanges } from './git-changes.ts';
+import { selectionProvider } from './selection-document.ts';
+import type { SelectionCommand } from './selection-document.ts';
+import { watchReadyMessageType } from './watch-protocol.ts';
+import type { CommandName } from './cli-help.ts';
+import { isNodeError } from './errors.ts';
 
-const normal = (path) => path.split(sep).join('/');
+export type WorkspaceProject = {
+  cacheDirectoryPath: string;
+  path: string;
+  root: string;
+};
+type WorkspaceCommand = SelectionCommand | 'clear-cache' | 'watch';
+type ProjectRun = {
+  args: string[];
+  command: WorkspaceCommand;
+  project: WorkspaceProject;
+  suppressNoop?: boolean;
+};
+const supportedCommands: WorkspaceCommand[] = [
+  'baseline', 'since-last-run', 'last-failed', 'clear-cache', 'related', 'affected', 'watch',
+];
 
-function splitCommandArgs(args) {
-  const positionals = [];
-  const forwardedOptions = [];
+const normal = (path: string) => path.split(sep).join('/');
+
+function splitCommandArgs(args: string[]) {
+  const positionals: string[] = [];
+  const forwardedOptions: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '--concurrency') {
       forwardedOptions.push(args[index], args[index + 1]);
@@ -24,9 +44,9 @@ function splitCommandArgs(args) {
   return { forwardedOptions, positionals };
 }
 
-function extractProjectFilters(args) {
-  const commandArgs = [];
-  const projectFilters = [];
+function extractProjectFilters(args: string[]) {
+  const commandArgs: string[] = [];
+  const projectFilters: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] !== '--project') {
       commandArgs.push(args[index]);
@@ -40,25 +60,25 @@ function extractProjectFilters(args) {
   return { commandArgs, projectFilters };
 }
 
-function baselineVerb(options) {
+function baselineVerb(options: string[]) {
   return options.includes('--dry-run') ? 'previewing' : 'running';
 }
 
-function ownerOf(projects, workspacePath) {
+function ownerOf(projects: WorkspaceProject[], workspacePath: string) {
   return projects.find((project) =>
     workspacePath === project.path || workspacePath.startsWith(`${project.path}/`));
 }
 
-function isProjectCachePath(project, projectPath) {
+function isProjectCachePath(project: WorkspaceProject, projectPath: string) {
   if (!project.cacheDirectoryPath) return projectPath === 'graph.json';
   return projectPath === `${project.cacheDirectoryPath}/graph.json` ||
     projectPath.startsWith(`${project.cacheDirectoryPath}/`);
 }
 
-function prefixLines(stream, destination, projectPath) {
+function prefixLines(stream: Readable, destination: Writable, projectPath: string) {
   let buffer = '';
   stream.setEncoding('utf8');
-  stream.on('data', (chunk) => {
+  stream.on('data', (chunk: string) => {
     buffer += chunk;
     let newline;
     while ((newline = buffer.indexOf('\n')) !== -1) {
@@ -74,15 +94,19 @@ function prefixLines(stream, destination, projectPath) {
   };
 }
 
-function runWorkspaceWatch({ projects, args, cliPath }) {
-  return new Promise((resolveResult) => {
-    const children = [];
-    const readyProjects = new Set();
+function runWorkspaceWatch({ projects, args, cliPath }: {
+  args: string[];
+  cliPath: string;
+  projects: WorkspaceProject[];
+}) {
+  return new Promise<number>((resolveResult) => {
+    const children: ReturnType<typeof spawn>[] = [];
+    const readyProjects = new Set<string>();
     let closedChildren = 0;
     let exitCode = 0;
     let stopping = false;
 
-    const stop = (code, childSignal = 'SIGTERM') => {
+    const stop = (code: number, childSignal: NodeJS.Signals = 'SIGTERM') => {
       if (stopping) return;
       stopping = true;
       exitCode = code;
@@ -104,10 +128,12 @@ function runWorkspaceWatch({ projects, args, cliPath }) {
         stdio: ['inherit', 'pipe', 'pipe', 'ipc'],
       });
       children.push(child);
+      if (!child.stdout || !child.stderr) throw new Error(`Failed to capture watcher output for ${project.path}.`);
       const flushStdout = prefixLines(child.stdout, process.stdout, project.path);
       const flushStderr = prefixLines(child.stderr, process.stderr, project.path);
       child.on('message', (message) => {
-        if (message?.type !== watchReadyMessageType || readyProjects.has(project.path)) return;
+        if (!message || typeof message !== 'object' || !('type' in message) ||
+            message.type !== watchReadyMessageType || readyProjects.has(project.path)) return;
         readyProjects.add(project.path);
         if (readyProjects.size === projects.length) console.log(`Watching in ${projects.length} projects.`);
       });
@@ -131,7 +157,7 @@ function runWorkspaceWatch({ projects, args, cliPath }) {
   });
 }
 
-export function resolveWorkspaceProjects({ root, projects }) {
+export function resolveWorkspaceProjects({ root, projects }: { projects: string[]; root: string }) {
   const resolvedProjects = projects.map((configuredRoot) => {
     if (isAbsolute(configuredRoot)) {
       throw new Error(`Workspace project root must be project-relative: ${configuredRoot}`);
@@ -144,8 +170,8 @@ export function resolveWorkspaceProjects({ root, projects }) {
     let stats;
     try {
       stats = statSync(projectRoot);
-    } catch (error) {
-      if (error.code === 'ENOENT') throw new Error(`Workspace project root does not exist: ${configuredRoot}`);
+    } catch (error: unknown) {
+      if (isNodeError(error) && error.code === 'ENOENT') throw new Error(`Workspace project root does not exist: ${configuredRoot}`);
       throw error;
     }
     if (!stats.isDirectory()) throw new Error(`Workspace project root is not a directory: ${configuredRoot}`);
@@ -166,11 +192,18 @@ export function resolveWorkspaceProjects({ root, projects }) {
   return resolvedProjects;
 }
 
-export async function runWorkspace({ root, projects, command, args: rawArgs, cliPath }) {
-  const supportedCommands = new Set(['baseline', 'since-last-run', 'last-failed', 'clear-cache', 'related', 'affected', 'watch']);
-  if (!supportedCommands.has(command)) {
+export async function runWorkspace({ root, projects, command: requestedCommand, args: rawArgs, cliPath }: {
+  args: string[];
+  cliPath: string;
+  command: CommandName;
+  projects: string[];
+  root: string;
+}) {
+  if (!supportedCommands.includes(requestedCommand as WorkspaceCommand)) {
+    const command: CommandName = requestedCommand;
     throw new Error(`Workspace command is not implemented yet: ${command}`);
   }
+  const command = requestedCommand as WorkspaceCommand;
 
   const allProjects = resolveWorkspaceProjects({ root, projects });
   const { commandArgs: args, projectFilters } = extractProjectFilters(rawArgs);
@@ -182,7 +215,7 @@ export async function runWorkspace({ root, projects, command, args: rawArgs, cli
   }
   const jsonOutput = args.includes('--output=json');
   const log = jsonOutput ? console.error : console.log;
-  let routing = { kind: 'all-projects' };
+  let routing: Record<string, unknown> = { kind: 'all-projects' };
 
   if (command === 'watch') {
     const { forwardedOptions, positionals } = splitCommandArgs(args);
@@ -190,13 +223,13 @@ export async function runWorkspace({ root, projects, command, args: rawArgs, cli
     return runWorkspaceWatch({ projects: resolvedProjects, args: forwardedOptions, cliPath });
   }
 
-  let projectRuns = resolvedProjects.map((project) => ({ project, command, args }));
+  let projectRuns: ProjectRun[] = resolvedProjects.map((project) => ({ project, command, args }));
   if (command === 'related') {
     const { forwardedOptions, positionals: files } = splitCommandArgs(args);
     if (!files.length) throw new Error('Usage: affected-node-test related <file...> [--concurrency N]');
 
-    const groupedFiles = new Map(resolvedProjects.map((project) => [project.path, []]));
-    let workspaceLevelFile;
+    const groupedFiles = new Map<string, string[]>(resolvedProjects.map((project) => [project.path, []]));
+    let workspaceLevelFile: string | undefined;
     for (const file of files) {
       const absoluteFile = resolve(root, file);
       const workspacePath = relative(root, absoluteFile);
@@ -210,7 +243,7 @@ export async function runWorkspace({ root, projects, command, args: rawArgs, cli
         continue;
       }
       if (!groupedFiles.has(owner.path)) continue;
-      groupedFiles.get(owner.path).push(normal(relative(owner.root, absoluteFile)));
+      groupedFiles.get(owner.path)?.push(normal(relative(owner.root, absoluteFile)));
     }
 
     if (workspaceLevelFile) {
@@ -224,11 +257,11 @@ export async function runWorkspace({ root, projects, command, args: rawArgs, cli
     } else {
       routing = { files: files.map(normal).sort(), kind: 'project-files' };
       projectRuns = resolvedProjects
-        .filter((project) => groupedFiles.get(project.path).length)
+        .filter((project) => Boolean(groupedFiles.get(project.path)?.length))
         .map((project) => ({
           project,
           command: 'related',
-          args: [...new Set(groupedFiles.get(project.path))].sort().concat(forwardedOptions),
+          args: [...new Set(groupedFiles.get(project.path) ?? [])].sort().concat(forwardedOptions),
         }));
     }
   }
@@ -260,12 +293,12 @@ export async function runWorkspace({ root, projects, command, args: rawArgs, cli
         ? { files: changes, kind: 'project-files' }
         : { kind: 'no-changes' };
       if (changes.length) log(`Changed files: ${changes.join(', ')}`);
-      const groupedFiles = new Map(resolvedProjects.map((project) => [project.path, []]));
+      const groupedFiles = new Map<string, string[]>(resolvedProjects.map((project) => [project.path, []]));
       const workspaceLevelChange = changes.find((workspacePath) => {
         const owner = ownerOf(allProjects, workspacePath);
         if (!owner) return true;
         if (!groupedFiles.has(owner.path)) return false;
-        groupedFiles.get(owner.path).push(workspacePath.slice(owner.path.length + 1));
+        groupedFiles.get(owner.path)?.push(workspacePath.slice(owner.path.length + 1));
         return false;
       });
       if (workspaceLevelChange) {
@@ -273,11 +306,11 @@ export async function runWorkspace({ root, projects, command, args: rawArgs, cli
         routing = { file: workspaceLevelChange, kind: 'workspace-fallback', reason: 'workspace-level-change' };
         projectRuns = resolvedProjects.map((project) => ({ project, command: 'baseline', args: forwardedOptions }));
       } else {
-        projectRuns = resolvedProjects.map((project) => groupedFiles.get(project.path).length
+        projectRuns = resolvedProjects.map((project) => groupedFiles.get(project.path)?.length
           ? {
               project,
               command: 'related',
-              args: [...new Set(groupedFiles.get(project.path))].sort().concat(forwardedOptions),
+              args: [...new Set(groupedFiles.get(project.path) ?? [])].sort().concat(forwardedOptions),
             }
           : { project, command: 'since-last-run', args: forwardedOptions, suppressNoop: true });
         printNoChangedFiles = !changes.length;
@@ -287,7 +320,7 @@ export async function runWorkspace({ root, projects, command, args: rawArgs, cli
 
   let exitCode = 0;
   let displayedProjects = 0;
-  const projectDocuments = [];
+  const projectDocuments: { path: string; result: unknown }[] = [];
   for (const { project, command: projectCommand, args: projectArgs, suppressNoop = false } of projectRuns) {
     const result = spawnSync(process.execPath, [cliPath, projectCommand, ...projectArgs], {
       cwd: project.root,
@@ -300,7 +333,7 @@ export async function runWorkspace({ root, projects, command, args: rawArgs, cli
     if (noOp) continue;
     displayedProjects += 1;
     if (jsonOutput) {
-      let projectDocument;
+      let projectDocument: unknown;
       try {
         projectDocument = JSON.parse(result.stdout);
       } catch {
@@ -319,7 +352,7 @@ export async function runWorkspace({ root, projects, command, args: rawArgs, cli
       schemaVersion: 1,
       mode: args.includes('--dry-run') ? 'preview' : 'run',
       command,
-      provider: selectionProvider(command),
+      provider: command === 'clear-cache' ? 'cache' : selectionProvider(command),
       workspaceRoot: root,
       outcome: exitCode ? 'failed' : 'passed',
       exitCode,

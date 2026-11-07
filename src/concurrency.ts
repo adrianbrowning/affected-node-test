@@ -1,6 +1,6 @@
 const invalidConcurrency = '--concurrency must be a positive integer or a percentage greater than 0% and at most 100%.';
 
-export function parseConcurrency(value, parallelism) {
+export function parseConcurrency(value: string | undefined, parallelism: number) {
   if (/^\d+$/.test(value ?? '') && Number(value) >= 1) return Number(value);
 
   const percentage = /^(\d+(?:\.\d+)?)%$/.exec(value ?? '');

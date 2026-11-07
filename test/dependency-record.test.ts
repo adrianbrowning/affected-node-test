@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.mjs';
-import { repositoryFilesFingerprint } from '../src/project-config.mjs';
+import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.ts';
+import type { DependencyRunResult } from '../src/dependency-record.ts';
+import { repositoryFilesFingerprint } from '../src/project-config.ts';
 
 const expected = {
   config: 'config-fingerprint',
@@ -51,6 +52,7 @@ test('dependency record module owns persistence and compatibility decisions', ()
 
     writeFileSync(path, JSON.stringify({ ...record, version: 11 }));
     const loaded = loadDependencyRecord(path, current);
+    assert.ok(loaded.record);
     assert.equal(loaded.record.version, 11);
     assert.deepEqual(loaded.record.graph, record.graph);
 
@@ -102,7 +104,7 @@ test('dependency record module owns successful, failed, and interrupted run upda
     failedTests: [],
     resultGraph: { 'test/a.test.mjs': [['test/a.test.mjs', 'src/a.mjs']] },
     unresolvedStaticTests: ['test/a.test.mjs'],
-  };
+  } satisfies DependencyRunResult;
   try {
     assert.deepEqual(applyDependencyRun(path, {
       dependencyStateForTest: () => ({ 'src/a.mjs': { mtimeMs: 1, size: 2 } }),
@@ -111,6 +113,7 @@ test('dependency record module owns successful, failed, and interrupted run upda
       tests: current.tests,
     }), { status: 'passed' });
     const initial = loadDependencyRecord(path, current).record;
+    assert.ok(initial);
     assert.deepEqual(initial.durations, passingResult.durations);
     assert.deepEqual(initial.failedTests, []);
     assert.deepEqual(initial.unresolvedStaticTests, current.tests);
@@ -123,6 +126,7 @@ test('dependency record module owns successful, failed, and interrupted run upda
       tests: current.tests,
     }), { status: 'failed' });
     const failed = loadDependencyRecord(path, current).record;
+    assert.ok(failed);
     assert.deepEqual(failed.graph, initial.graph);
     assert.deepEqual(failed.dependencyStates, initial.dependencyStates);
     assert.deepEqual(failed.failedTests, current.tests);
@@ -144,6 +148,7 @@ test('dependency record module owns successful, failed, and interrupted run upda
       tests: current.tests,
     }), { status: 'passed' });
     const recovered = loadDependencyRecord(path, current).record;
+    assert.ok(recovered);
     assert.deepEqual(recovered.failedTests, []);
     assert.deepEqual(recovered.unresolvedStaticTests, []);
   } finally {

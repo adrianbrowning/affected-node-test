@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { writeJsonAtomically } from '../src/cache.mjs';
+import { writeJsonAtomically } from '../src/cache.ts';
 
 test('cache writes atomically replace the destination file', () => {
   const directory = mkdtempSync(join(tmpdir(), 'affected-tests-cache-'));

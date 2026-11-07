@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "erasableSyntaxOnly": true,
+    "module": "nodenext",
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "esnext",
+    "types": ["node"],
+    "verbatimModuleSyntax": true
+  },
+  "include": ["bin/**/*.ts", "src/**/*.ts", "test/**/*.ts"]
+}

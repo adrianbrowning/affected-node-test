@@ -1,31 +1,37 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-const cli = fileURLToPath(new URL('../bin/affected-node-test.mjs', import.meta.url));
+const cli = fileURLToPath(new URL('../bin/affected-node-test.ts', import.meta.url));
 
-function run(cwd, ...args) {
+function run(cwd: string, ...args: string[]) {
   return runWithEnv(cwd, {}, ...args);
 }
 
-function runWithEnv(cwd, extraEnv, ...args) {
+function runWithEnv(cwd: string, extraEnv: NodeJS.ProcessEnv, ...args: string[]) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   Object.assign(env, extraEnv);
   return spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8', env });
 }
 
-function git(cwd, ...args) {
+function git(cwd: string, ...args: string[]) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   return result.stdout;
 }
 
-async function waitForProcessOutput(child, output, predicate, timeout = 8_000) {
+async function waitForProcessOutput(
+  child: ChildProcess,
+  output: () => string,
+  predicate: (output: string) => boolean,
+  timeout = 8_000,
+) {
   const deadline = Date.now() + timeout;
   while (!predicate(output())) {
     if (child.exitCode !== null) throw new Error(`Process exited with ${child.exitCode}:\n${output()}`);
@@ -93,7 +99,7 @@ function makeNonGitRepository({ withOtherTest = false } = {}) {
 
 function makeWorkspace() {
   const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-workspace-'));
-  for (const [name, value] of [['a', 1], ['b', 2]]) {
+  for (const [name, value] of [['a', 1], ['b', 2]] as const) {
     const project = join(cwd, 'packages', name);
     mkdirSync(join(project, 'src'), { recursive: true });
     mkdirSync(join(project, 'test'));
@@ -169,11 +175,13 @@ function makeTypeScriptRepository() {
   return cwd;
 }
 
-function makeParallelRepository({ delays = { a: 500, b: 500, c: 500 } } = {}) {
+function makeParallelRepository({ delays = { a: 500, b: 500, c: 500 } }: {
+  delays?: Record<'a' | 'b' | 'c', number>;
+} = {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-parallel-'));
   mkdirSync(join(cwd, 'test'));
   writeFileSync(join(cwd, 'package.json'), '{"type":"module"}\n');
-  for (const name of ['a', 'b', 'c']) {
+  for (const name of ['a', 'b', 'c'] as const) {
     writeFileSync(join(cwd, 'test', `${name}.test.mjs`), [
       "import { appendFileSync } from 'node:fs';",
       "import test from 'node:test';",
@@ -278,7 +286,7 @@ function makeEnvironmentRepository() {
   return cwd;
 }
 
-async function waitFor(check, timeout = 5_000) {
+async function waitFor(check: () => boolean, timeout = 5_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (check()) return;
@@ -287,12 +295,12 @@ async function waitFor(check, timeout = 5_000) {
   assert.fail('Timed out waiting for condition');
 }
 
-function isProcessRunning(pid) {
+function isProcessRunning(pid: number) {
   try {
     process.kill(pid, 0);
     return true;
-  } catch (error) {
-    if (error.code === 'ESRCH') return false;
+  } catch (error: unknown) {
+    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') return false;
     throw error;
   }
 }
@@ -383,7 +391,7 @@ test('doctor validates single projects without running tests or mutating cache',
   try {
     const result = run(cwd, 'doctor');
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /Node: v?\d+\.\d+\.\d+ \(supported; requires >=22\.15\.0\)/);
+    assert.match(result.stdout, /Node: v?\d+\.\d+\.\d+ \(supported; requires >=26\.0\.0\)/);
     assert.match(result.stdout, new RegExp(`Project root: ${cwd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     assert.match(result.stdout, /Tests: 1 discovered/);
     assert.match(result.stdout, /Cache: missing \(\.affected-tests\/graph\.json\)/);
@@ -853,7 +861,7 @@ test('workspace project filters scope finite and watch commands', { timeout: 60_
 
     const multiple = run(cwd, 'baseline', '--project', 'packages/b', '--project', 'packages/a', '--output=json');
     assert.equal(multiple.status, 0, multiple.stderr);
-    assert.deepEqual(JSON.parse(multiple.stdout).projects.map(({ path }) => path), ['packages/a', 'packages/b']);
+    assert.deepEqual(JSON.parse(multiple.stdout).projects.map(({ path }: { path: string }) => path), ['packages/a', 'packages/b']);
 
     const missing = run(cwd, 'baseline', '--project', 'packages/missing');
     assert.equal(missing.status, 1);
@@ -930,7 +938,7 @@ test('workspace affected routes Git changes only to their owning project', () =>
 
 test('workspace dry-run preserves project routing, fallbacks, and cache state', () => {
   const cwd = makeWorkspace();
-  const cache = (project) => join(cwd, 'packages', project, '.affected-tests', 'graph.json');
+  const cache = (project: string) => join(cwd, 'packages', project, '.affected-tests', 'graph.json');
   try {
     assert.equal(run(cwd, 'baseline').status, 0);
     const cacheBefore = {
@@ -1006,7 +1014,7 @@ test('workspace JSON aggregates routing and project results for finite commands'
     assert.equal(baselineDocument.workspaceRoot, cwd);
     assert.equal(baselineDocument.outcome, 'passed');
     assert.equal(baselineDocument.exitCode, 0);
-    assert.deepEqual(baselineDocument.projects.map(({ path }) => path), ['packages/a', 'packages/b']);
+    assert.deepEqual(baselineDocument.projects.map(({ path }: { path: string }) => path), ['packages/a', 'packages/b']);
 
     const noOp = run(cwd, 'affected', '--output=json');
     assert.equal(noOp.status, 0, noOp.stderr);
@@ -1021,7 +1029,7 @@ test('workspace JSON aggregates routing and project results for finite commands'
       kind: 'project-files',
       files: ['packages/a/src/value.mjs'],
     });
-    const projectA = selectedDocument.projects.find(({ path }) => path === 'packages/a');
+    const projectA = selectedDocument.projects.find(({ path }: { path: string }) => path === 'packages/a');
     assert.deepEqual(projectA.result.execution.tests, ['test/value.test.mjs']);
     assert.deepEqual(projectA.result.execution.failures, []);
 
@@ -1037,7 +1045,7 @@ test('workspace JSON aggregates routing and project results for finite commands'
     const lastFailed = run(cwd, 'last-failed', '--dry-run', '--output=json');
     assert.equal(lastFailed.status, 0, lastFailed.stderr);
     const failedProject = JSON.parse(lastFailed.stdout).projects
-      .find(({ path }) => path === 'packages/b');
+      .find(({ path }: { path: string }) => path === 'packages/b');
     assert.deepEqual(failedProject.result.tests, ['test/value.test.mjs']);
 
     writeFileSync(join(cwd, 'README.md'), 'workspace change\n');
@@ -1050,7 +1058,7 @@ test('workspace JSON aggregates routing and project results for finite commands'
       reason: 'workspace-level-change',
     });
     assert.equal(fallbackDocument.mode, 'preview');
-    assert.deepEqual(fallbackDocument.projects.map(({ path }) => path), ['packages/a', 'packages/b']);
+    assert.deepEqual(fallbackDocument.projects.map(({ path }: { path: string }) => path), ['packages/a', 'packages/b']);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -1065,18 +1073,22 @@ test('watch emits structured readiness over IPC', { timeout: 30_000 }, async () 
     env,
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
-  const messages = [];
+  const messages: unknown[] = [];
   let stdout = '';
   let stderr = '';
+  assert.ok(child.stdout);
+  assert.ok(child.stderr);
   child.stdout.setEncoding('utf8');
   child.stderr.setEncoding('utf8');
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
   child.on('message', (message) => { messages.push(message); });
-  const closed = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+    child.once('close', (code, signal) => resolve({ code, signal })));
   try {
     await waitForProcessOutput(child, () => `${stdout}${stderr}\n${JSON.stringify(messages)}`,
-      () => messages.some((message) => message?.type === 'affected-node-test:watch-ready'), 15_000);
+      () => messages.some((message) => Boolean(message && typeof message === 'object' &&
+        'type' in message && message.type === 'affected-node-test:watch-ready')), 15_000);
     assert.match(stdout, /Watching for changes\./);
 
     child.kill('SIGTERM');
@@ -1095,8 +1107,8 @@ test('workspace watch coordinates project reruns and shutdown', { timeout: 60_00
   delete env.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [cli, 'watch', '--concurrency', '1'], {
     cwd,
-    encoding: 'utf8',
     env,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '';
   let stderr = '';
@@ -1104,7 +1116,8 @@ test('workspace watch coordinates project reruns and shutdown', { timeout: 60_00
   child.stderr.setEncoding('utf8');
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
-  const closed = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+    child.once('close', (code, signal) => resolve({ code, signal })));
   try {
     await waitForProcessOutput(child, () => stdout + stderr,
       (output) => output.includes('Watching in 2 projects.'), 30_000);
@@ -1135,8 +1148,8 @@ test('workspace watch stops sibling watchers when one project fails to start', {
   delete env.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [cli, 'watch', '--concurrency', '1'], {
     cwd,
-    encoding: 'utf8',
     env,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '';
   let stderr = '';
@@ -1144,7 +1157,8 @@ test('workspace watch stops sibling watchers when one project fails to start', {
   child.stderr.setEncoding('utf8');
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
-  const closed = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+    child.once('close', (code, signal) => resolve({ code, signal })));
   try {
     const result = await closed;
     assert.equal(result.code, 1, `${stdout}\n${stderr}`);
@@ -1501,8 +1515,8 @@ test('watch reruns only tests related to a changed dependency', { timeout: 45_00
   delete env.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [cli, 'watch', '--concurrency', '1'], {
     cwd,
-    encoding: 'utf8',
     env,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '';
   let stderr = '';
@@ -1510,7 +1524,8 @@ test('watch reruns only tests related to a changed dependency', { timeout: 45_00
   child.stderr.setEncoding('utf8');
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
-  const closed = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+    child.once('close', (code, signal) => resolve({ code, signal })));
   try {
     await waitForProcessOutput(child, () => stdout + stderr,
       (output) => output.includes('Watching for changes.'), 20_000);
@@ -1537,8 +1552,8 @@ test('watch reruns only tests related to a changed dependency', { timeout: 45_00
 test('SIGTERM stops active test processes and preserves the cache', { timeout: 15_000 }, async () => {
   const cwd = makeInterruptRepository();
   const tracker = join(cwd, 'interrupt.log');
-  let cliProcess;
-  let testPid;
+  let cliProcess: ChildProcess | undefined;
+  let testPid: number | undefined;
   try {
     assert.equal(run(cwd, 'baseline').status, 0);
     const cachePath = join(cwd, '.affected-tests', 'graph.json');
@@ -1546,7 +1561,7 @@ test('SIGTERM stops active test processes and preserves the cache', { timeout: 1
     const previousTemporaryDirectories = edgeTemporaryDirectories();
     writeFileSync(join(cwd, 'src', 'value.mjs'), 'export const value = 1; // changed\n');
 
-    const env = { ...process.env, INTERRUPT_TRACKER: tracker };
+    const env: NodeJS.ProcessEnv = { ...process.env, INTERRUPT_TRACKER: tracker };
     delete env.NODE_TEST_CONTEXT;
     cliProcess = spawn(process.execPath, [cli, 'affected', 'HEAD', '--concurrency', '1'], {
       cwd,
@@ -1554,6 +1569,7 @@ test('SIGTERM stops active test processes and preserves the cache', { timeout: 1
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stderr = '';
+    assert.ok(cliProcess.stderr);
     cliProcess.stderr.setEncoding('utf8');
     cliProcess.stderr.on('data', (chunk) => { stderr += chunk; });
 
@@ -1561,18 +1577,19 @@ test('SIGTERM stops active test processes and preserves the cache', { timeout: 1
     testPid = Number(readFileSync(tracker, 'utf8').match(/start:(\d+)/)?.[1]);
     assert.ok(Number.isSafeInteger(testPid) && testPid > 1);
 
-    const exited = new Promise((resolveExit) => cliProcess.once('exit', (code, signal) => resolveExit({ code, signal })));
+    const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit) =>
+      cliProcess?.once('exit', (code, signal) => resolveExit({ code, signal })));
     cliProcess.kill('SIGTERM');
     const result = await exited;
 
-    await waitFor(() => !isProcessRunning(testPid));
+    await waitFor(() => testPid !== undefined && !isProcessRunning(testPid));
     await waitFor(() => JSON.stringify(edgeTemporaryDirectories()) === JSON.stringify(previousTemporaryDirectories));
     assert.deepEqual(result, { code: 143, signal: null });
     assert.match(stderr, /Test run interrupted by SIGTERM; previous graph was left unchanged\./);
     assert.equal(readFileSync(cachePath, 'utf8'), previousCache);
   } finally {
     if (cliProcess && cliProcess.exitCode === null && cliProcess.signalCode === null) cliProcess.kill('SIGKILL');
-    if (Number.isSafeInteger(testPid) && testPid > 1 && isProcessRunning(testPid)) process.kill(testPid, 'SIGKILL');
+    if (testPid !== undefined && Number.isSafeInteger(testPid) && testPid > 1 && isProcessRunning(testPid)) process.kill(testPid, 'SIGKILL');
     rmSync(cwd, { recursive: true, force: true });
   }
 });
@@ -1916,7 +1933,7 @@ test('since-last-run selects changed dependencies without Git', () => {
 
 test('new tests run incrementally in Git and mtime modes', () => {
   const cwd = makeRepository();
-  const writeTest = (name) => writeFileSync(join(cwd, 'test', `${name}.test.mjs`), [
+  const writeTest = (name: string) => writeFileSync(join(cwd, 'test', `${name}.test.mjs`), [
     "import test from 'node:test';",
     "import assert from 'node:assert/strict';",
     "import { value } from '../src/value.mjs';",
@@ -1947,7 +1964,7 @@ test('new tests run incrementally in Git and mtime modes', () => {
 test('a failing new test remains an incremental sticky failure', () => {
   const cwd = makeRepository();
   const addedTest = join(cwd, 'test', 'added.test.mjs');
-  const source = (expected) => [
+  const source = (expected: number) => [
     "import test from 'node:test';",
     "import assert from 'node:assert/strict';",
     "import { value } from '../src/value.mjs';",

@@ -4,9 +4,8 @@
   "description": "Affected-test selection for Node's native test runner",
   "type": "module",
   "files": [
-    "bin",
+    "dist",
     "schema",
-    "src",
     "README.md"
   ],
   "repository": {
@@ -24,26 +23,31 @@
   ],
   "packageManager": "pnpm@12.14.0",
   "engines": {
-    "node": ">=22.15.0"
+    "node": ">=26.0.0"
   },
   "bin": {
-    "affected-node-test": "./bin/affected-node-test.mjs"
+    "affected-node-test": "./dist/bin/affected-node-test.js"
   },
   "scripts": {
-    "check:full": "pnpm docs:check && pnpm test",
+    "build": "tsc --project tsconfig.build.json && node --input-type=module -e \"import { chmodSync } from 'node:fs'; chmodSync('dist/bin/affected-node-test.js', 0o755)\"",
+    "check:full": "pnpm docs:check && pnpm typecheck && pnpm build && pnpm test",
     "docs:check": "mdcode update --quiet --check README.md",
     "docs:update": "mdcode update --quiet --apply README.md",
-    "test": "node --test test/*.test.mjs",
-    "test:affected": "node bin/affected-node-test.mjs affected",
-    "test:baseline": "node bin/affected-node-test.mjs baseline",
-    "test:since-last-run": "node bin/affected-node-test.mjs since-last-run",
-    "test:watch": "node bin/affected-node-test.mjs watch",
-    "test:unit": "node --test test/*.test.mjs"
+    "prepack": "pnpm build",
+    "test": "node --test test/*.test.ts",
+    "test:affected": "node bin/affected-node-test.ts affected",
+    "test:baseline": "node bin/affected-node-test.ts baseline",
+    "test:since-last-run": "node bin/affected-node-test.ts since-last-run",
+    "test:watch": "node bin/affected-node-test.ts watch",
+    "test:unit": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "acorn": "8.19.0"
   },
   "devDependencies": {
-    "mdcode-ts": "0.1.0"
+    "@types/node": "^26.6.6",
+    "mdcode-ts": "0.1.0",
+    "typescript": "5.9.3"
   }
 }

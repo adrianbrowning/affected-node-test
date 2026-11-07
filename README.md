@@ -4,7 +4,7 @@ An Acorn-backed affected-test selector for Node's native `node:test`, combining 
 
 ## Install
 
-`affected-node-test` requires Node 22.15 or newer. Install it as a development dependency with your package manager:
+`affected-node-test` requires Node 26 or newer. Install it as a development dependency with your package manager:
 
 ```sh
 pnpm add --save-dev affected-node-test
@@ -28,7 +28,7 @@ node --test
 
 The initial passing `baseline` records the dependency graph. Later `affected` runs select tests for staged, unstaged, and untracked changes. A full test command remains the required final correctness gate.
 
-No configuration is needed for conventional `.test.js`, `.test.mjs`, `.test.cjs`, `.spec.js`, `.spec.mjs`, and `.spec.cjs` files. To make discovery explicit, add this optional `affected-node-test.config.json`:
+No configuration is needed for conventional JavaScript or TypeScript `.test` and `.spec` files. To make discovery explicit, add this optional `affected-node-test.config.json`:
 
 ```json file=docs/examples/minimal-config.json
 {
@@ -113,6 +113,10 @@ Workspace documents use the same schema version and add `workspaceRoot`, aggrega
 
 ## Development
 
+Development uses Node 26's native TypeScript type stripping. Run the `.ts` sources and tests directly with Node; keep syntax erasable (no enums or parameter properties), use `import type` for type-only imports, and run `pnpm typecheck` for strict static checking. `pnpm build` emits the JavaScript-only `dist/` package artifact; consumers never execute or receive the development TypeScript files.
+
+See [TypeScript development and migration](docs/typescript-development.md) for the source conventions and release-artifact boundary.
+
 Run the integration suite with `pnpm test`. The tests exercise the CLI in temporary Git repositories and do not modify the working repository.
 
 This repository dogfoods its own selector:
@@ -123,7 +127,7 @@ This repository dogfoods its own selector:
 - `pnpm test:watch` performs an initial full run and then watches for related changes.
 
 These commands are development feedback loops. They do not replace the final full-suite gate.
-The checked-in root configuration limits self-hosted discovery to `test/**/*.test.mjs`, matching `pnpm test` and excluding the standalone example project's tests.
+The checked-in root configuration limits self-hosted discovery to `test/**/*.test.ts`, matching `pnpm test` and excluding the standalone example project's tests.
 
 README code blocks with `file=...` metadata are synchronized from checked-in examples by [mdcode-ts](https://github.com/adrianbrowning/mdcode-ts). Run `pnpm docs:update` to refresh them or `pnpm docs:check` to fail on drift.
 

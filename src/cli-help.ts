@@ -88,9 +88,15 @@ Example:
   affected-node-test doctor`,
 };
 
-export const commandNames = Object.freeze(Object.keys(commandHelpText));
+export type CommandName = keyof typeof commandHelpText;
 
-export function commandHelp(command) {
+export const commandNames = Object.freeze(Object.keys(commandHelpText) as CommandName[]);
+
+export function isCommandName(value: string): value is CommandName {
+  return commandNames.some((command) => command === value);
+}
+
+export function commandHelp(command: CommandName) {
   return commandHelpText[command];
 }
 

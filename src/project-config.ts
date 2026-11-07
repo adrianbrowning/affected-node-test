@@ -1,6 +1,26 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, matchesGlob, relative, sep } from 'node:path';
+import { errorMessage, isNodeError } from './errors.ts';
+
+export type WatchTriggerPattern = {
+  pattern: string;
+  tests: string[];
+};
+
+export type ProjectConfig = {
+  cacheDir: string;
+  envFiles: string[];
+  exclude: string[];
+  forceRerunTriggers: string[];
+  globalSetupFiles: string[];
+  include: string[];
+  nodeArgs: string[];
+  projectDependencies: string[];
+  projects: string[];
+  setupFiles: string[];
+  watchTriggerPatterns: WatchTriggerPattern[];
+};
 
 export const configFileName = 'affected-node-test.config.json';
 export const conventionDependencyPatterns = [
@@ -17,16 +37,20 @@ const excludedDirectories = new Set([
   'node_modules',
 ]);
 
-function stringArray(config, key) {
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item: unknown) => typeof item === 'string' && item !== '');
+}
+
+function stringArray(config: Record<string, unknown>, key: string) {
   const value = config[key];
   if (value === undefined) return [];
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item === '')) {
+  if (!isStringArray(value)) {
     throw new Error(`${configFileName}: ${key} must be an array of non-empty strings.`);
   }
   return value;
 }
 
-function nonEmptyString(config, key, fallback) {
+function nonEmptyString(config: Record<string, unknown>, key: string, fallback: string) {
   const value = config[key];
   if (value === undefined) return fallback;
   if (typeof value !== 'string' || value === '') {
@@ -35,36 +59,36 @@ function nonEmptyString(config, key, fallback) {
   return value;
 }
 
-function watchTriggerPatterns(config) {
+function watchTriggerPatterns(config: Record<string, unknown>): WatchTriggerPattern[] {
   const value = config.watchTriggerPatterns;
   if (value === undefined) return [];
   if (!Array.isArray(value)) {
     throw new Error(`${configFileName}: watchTriggerPatterns must be an array.`);
   }
-  return value.map((mapping, index) => {
+  return value.map((mapping: unknown, index: number) => {
     const label = `watchTriggerPatterns[${index}]`;
     if (!mapping || typeof mapping !== 'object' || Array.isArray(mapping)) {
       throw new Error(`${configFileName}: ${label} must be an object.`);
     }
-    const unknownKey = Object.keys(mapping).find((key) => !['pattern', 'tests'].includes(key));
+    const objectMapping = mapping as Record<string, unknown>;
+    const unknownKey = Object.keys(objectMapping).find((key) => !['pattern', 'tests'].includes(key));
     if (unknownKey) throw new Error(`${configFileName}: unknown option ${label}.${unknownKey}.`);
-    if (typeof mapping.pattern !== 'string' || mapping.pattern === '') {
+    if (typeof objectMapping.pattern !== 'string' || objectMapping.pattern === '') {
       throw new Error(`${configFileName}: ${label}.pattern must be a non-empty string.`);
     }
-    if (!Array.isArray(mapping.tests) ||
-        !mapping.tests.length || mapping.tests.some((test) => typeof test !== 'string' || test === '')) {
+    if (!isStringArray(objectMapping.tests) || !objectMapping.tests.length) {
       throw new Error(`${configFileName}: ${label}.tests must be a non-empty array of non-empty strings.`);
     }
-    return { pattern: mapping.pattern, tests: mapping.tests };
+    return { pattern: objectMapping.pattern, tests: objectMapping.tests };
   });
 }
 
-export function loadProjectConfig(root) {
+export function loadProjectConfig(root: string): ProjectConfig {
   let source;
   try {
     source = readFileSync(join(root, configFileName), 'utf8');
-  } catch (error) {
-    if (error.code === 'ENOENT') {
+  } catch (error: unknown) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
       return {
         cacheDir: '.affected-tests',
         include: [],
@@ -81,15 +105,16 @@ export function loadProjectConfig(root) {
     }
     throw error;
   }
-  let config;
+  let parsed: unknown;
   try {
-    config = JSON.parse(source);
-  } catch (error) {
-    throw new Error(`${configFileName}: invalid JSON: ${error.message}`);
+    parsed = JSON.parse(source);
+  } catch (error: unknown) {
+    throw new Error(`${configFileName}: invalid JSON: ${errorMessage(error)}`);
   }
-  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`${configFileName}: configuration must be a JSON object.`);
   }
+  const config = parsed as Record<string, unknown>;
   const knownKeys = new Set([
     '$schema',
     'cacheDir',
@@ -106,7 +131,9 @@ export function loadProjectConfig(root) {
   ]);
   const unknownKey = Object.keys(config).find((key) => !knownKeys.has(key));
   if (unknownKey) throw new Error(`${configFileName}: unknown option ${unknownKey}.`);
-  nonEmptyString(config, '$schema');
+  if (config.$schema !== undefined && (typeof config.$schema !== 'string' || config.$schema === '')) {
+    throw new Error(`${configFileName}: $schema must be a non-empty string.`);
+  }
   const projects = stringArray(config, 'projects');
   const projectOptions = [...knownKeys].filter((key) => !['$schema', 'projects'].includes(key));
   if (projects.length) {
@@ -130,11 +157,11 @@ export function loadProjectConfig(root) {
   };
 }
 
-export function matchesPatterns(path, patterns) {
+export function matchesPatterns(path: string, patterns: string[]) {
   return patterns.some((pattern) => matchesGlob(path, pattern));
 }
 
-function matchingFiles(root, patterns, directory = root, output = []) {
+function matchingFiles(root: string, patterns: string[], directory = root, output: [string, string][] = []) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory() && excludedDirectories.has(entry.name)) continue;
     const path = join(directory, entry.name);
@@ -147,26 +174,26 @@ function matchingFiles(root, patterns, directory = root, output = []) {
   return output;
 }
 
-export function matchingRepositoryFiles(root, patterns) {
+export function matchingRepositoryFiles(root: string, patterns: string[]) {
   if (!patterns.length) return [];
   return matchingFiles(root, patterns)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([repositoryPath]) => repositoryPath);
 }
 
-export function projectDependencyFingerprint(root, patterns) {
+export function projectDependencyFingerprint(root: string, patterns: string[]) {
   return repositoryFilesFingerprint(root, matchingRepositoryFiles(root, patterns));
 }
 
-export function repositoryFilesFingerprint(root, repositoryPaths) {
+export function repositoryFilesFingerprint(root: string, repositoryPaths: string[]) {
   const hash = createHash('sha256');
   for (const repositoryPath of [...new Set(repositoryPaths)].sort()) {
     hash.update(repositoryPath);
     hash.update('\0');
     try {
       hash.update(readFileSync(join(root, repositoryPath)));
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
+    } catch (error: unknown) {
+      if (!isNodeError(error) || error.code !== 'ENOENT') throw error;
       hash.update('<missing>');
     }
     hash.update('\0');

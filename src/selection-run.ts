@@ -1,20 +1,56 @@
-import { dependencyPathForTest } from './dependency-graph.mjs';
-import { matchesPatterns } from './project-config.mjs';
+import { dependencyPathForTest } from './dependency-graph.ts';
+import { matchesPatterns } from './project-config.ts';
+import type { DependencyRecord, DependencyState } from './dependency-record.ts';
+import type { ProjectConfig } from './project-config.ts';
+
+export type SelectionReason =
+  | { file: string; kind: 'dependency'; path: string[] }
+  | { kind: 'dependency-state-change' }
+  | { kind: 'previous-failure' }
+  | { kind: 'unrecorded-test' }
+  | { files: string[]; kind: 'unresolved-static' }
+  | { file: string; kind: 'watch-trigger'; pattern: string };
+export type FallbackReason =
+  | { file: string; kind: 'force-rerun-trigger'; pattern: string }
+  | { files: string[]; kind: 'project-configuration' }
+  | { files: string[]; kind: 'unknown-code' }
+  | { file: string; kind: 'watch-trigger-empty'; pattern: string; testPatterns: string[] }
+  | { kind: 'no-merge-base'; ref: string };
+export type SelectedOutcome = {
+  kind: 'selected';
+  messages: string[];
+  reasons: Record<string, SelectionReason[]>;
+  tests: string[];
+};
+export type BaselineOutcome = {
+  kind: 'baseline';
+  message: string;
+  reason?: FallbackReason;
+};
+export type SelectionOutcome = BaselineOutcome | SelectedOutcome;
+type SelectionDetails = { selectedLabel: string };
+export type PreparedSelection = {
+  announceSelected?: boolean;
+  contextMessages?: string[];
+  emptyMessage?: string;
+  selectedLabel?: string;
+  selection: SelectionOutcome;
+};
 
 function reasonCollector() {
-  const collected = new Map();
+  const collected = new Map<string, SelectionReason[]>();
   return {
-    add(test, reason) {
+    add(test: string, reason: SelectionReason) {
       if (!collected.has(test)) collected.set(test, []);
-      collected.get(test).push(reason);
+      collected.get(test)?.push(reason);
     },
-    forTests(tests) {
+    forTests(tests: Iterable<string>) {
       return Object.fromEntries([...tests].sort().map((test) => [test, collected.get(test) ?? []]));
     },
   };
 }
 
-export async function executeSelectionRun({
+export async function executeSelectionRun<RecordType>({
   baseline,
   empty,
   execute,
@@ -22,6 +58,14 @@ export async function executeSelectionRun({
   log,
   prepare,
   totalTests,
+}: {
+  baseline: (record?: RecordType, selection?: BaselineOutcome) => Promise<unknown>;
+  empty?: (record: RecordType, selection: SelectedOutcome, details: SelectionDetails) => Promise<unknown> | unknown;
+  execute: (tests: string[], record: RecordType, selection: SelectedOutcome, details: SelectionDetails) => Promise<unknown>;
+  loadRecord: () => RecordType | undefined;
+  log: (message: string) => unknown;
+  prepare: (record: RecordType) => PreparedSelection;
+  totalTests: number;
 }) {
   const record = loadRecord();
   if (!record) {
@@ -43,12 +87,18 @@ async function executeSelection({
   announceSelected = true,
   contextMessages = [],
   empty,
-  emptyMessage,
+  emptyMessage = 'No tests selected.',
   execute,
   log,
   selection,
   selectedLabel = 'test file(s)',
   totalTests,
+}: PreparedSelection & {
+  baseline: (selection: BaselineOutcome) => Promise<unknown>;
+  empty?: (selection: SelectedOutcome, details: SelectionDetails) => Promise<unknown> | unknown;
+  execute: (tests: string[], selection: SelectedOutcome, details: SelectionDetails) => Promise<unknown>;
+  log: (message: string) => unknown;
+  totalTests: number;
 }) {
   if (selection.kind === 'baseline') {
     log(selection.message);
@@ -66,8 +116,12 @@ async function executeSelection({
   await execute(selection.tests, selection, { selectedLabel });
 }
 
-export function selectTestsSinceLastRun({ dependencyStateChanged, record, tests }) {
-  const selected = new Set();
+export function selectTestsSinceLastRun({ dependencyStateChanged, record, tests }: {
+  dependencyStateChanged: (state: DependencyState) => boolean;
+  record: Pick<DependencyRecord, 'dependencyStates' | 'failedTests'>;
+  tests: string[];
+}): SelectedOutcome {
+  const selected = new Set<string>();
   const reasons = reasonCollector();
   for (const test of record.failedTests) {
     selected.add(test);
@@ -91,7 +145,7 @@ export function selectTestsSinceLastRun({ dependencyStateChanged, record, tests 
   };
 }
 
-export function selectLastFailed({ record }) {
+export function selectLastFailed({ record }: { record: Pick<DependencyRecord, 'failedTests'> }): SelectedOutcome {
   const tests = [...record.failedTests].sort();
   const reasons = reasonCollector();
   for (const test of tests) reasons.add(test, { kind: 'previous-failure' });
@@ -103,7 +157,12 @@ export function selectLastFailed({ record }) {
   };
 }
 
-export function selectTestsForFiles({ config, files, record, tests }) {
+export function selectTestsForFiles({ config, files, record, tests }: {
+  config: Pick<ProjectConfig, 'forceRerunTriggers' | 'watchTriggerPatterns'>;
+  files: string[];
+  record: Pick<DependencyRecord, 'dependencyStates' | 'failedTests' | 'graph' | 'unresolvedStaticTests'>;
+  tests: string[];
+}): SelectionOutcome {
   for (const file of files) {
     const pattern = config.forceRerunTriggers.find((candidate) => matchesPatterns(file, [candidate]));
     if (!pattern) continue;
@@ -122,7 +181,7 @@ export function selectTestsForFiles({ config, files, record, tests }) {
     };
   }
 
-  const selected = new Set();
+  const selected = new Set<string>();
   const reasons = reasonCollector();
   for (const test of record.failedTests) {
     selected.add(test);
@@ -141,7 +200,7 @@ export function selectTestsForFiles({ config, files, record, tests }) {
       known.add(child);
     }
   }
-  const codeChange = (path) => /\.(?:[cm]?[jt]s|[jt]sx)$/.test(path);
+  const codeChange = (path: string) => /\.(?:[cm]?[jt]s|[jt]sx)$/.test(path);
   const unknownCode = files.filter((path) => codeChange(path) && !known.has(path));
   if (unknownCode.length) {
     return {
@@ -159,8 +218,8 @@ export function selectTestsForFiles({ config, files, record, tests }) {
   }
 
   const messages = [];
-  const watchTriggeredChanges = new Set();
-  const watchTriggeredTests = new Set();
+  const watchTriggeredChanges = new Set<string>();
+  const watchTriggeredTests = new Set<string>();
   for (const mapping of config.watchTriggerPatterns) {
     for (const file of files) {
       if (!matchesPatterns(file, [mapping.pattern])) continue;

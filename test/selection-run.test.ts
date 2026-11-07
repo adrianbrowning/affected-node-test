@@ -6,7 +6,8 @@ import {
   selectLastFailed,
   selectTestsForFiles,
   selectTestsSinceLastRun,
-} from '../src/selection-run.mjs';
+} from '../src/selection-run.ts';
+import type { DependencyRecord, DependencyState } from '../src/dependency-record.ts';
 
 const tests = ['test/a.test.mjs', 'test/b.test.mjs'];
 const record = {
@@ -23,7 +24,7 @@ const record = {
     'test/b.test.mjs': [['test/b.test.mjs', 'src/b.mjs']],
   },
   unresolvedStaticTests: [],
-};
+} satisfies Pick<DependencyRecord, 'dependencyStates' | 'failedTests' | 'graph' | 'unresolvedStaticTests'>;
 const config = {
   forceRerunTriggers: [],
   watchTriggerPatterns: [],
@@ -146,15 +147,17 @@ test('file selection returns normalized targeted and conservative outcomes', () 
 });
 
 test('mtime selection returns the same normalized targeted outcome', () => {
-  const changedStates = new Set(['changed']);
+  const unchangedState: DependencyState = {};
+  const changedState: DependencyState = { 'src/changed.mjs': { mtimeMs: 1, size: 1 } };
+  const changedStates = new Set([changedState]);
 
   assert.deepEqual(selectTestsSinceLastRun({
     dependencyStateChanged: (state) => changedStates.has(state),
     record: {
       ...record,
       dependencyStates: {
-        'test/a.test.mjs': 'unchanged',
-        'test/b.test.mjs': 'changed',
+        'test/a.test.mjs': unchangedState,
+        'test/b.test.mjs': changedState,
       },
     },
     tests,
@@ -215,15 +218,15 @@ test('last-failed selection returns only sticky failures with structured reasons
 });
 
 test('selection run owns cache fallback and targeted safety sequencing', async () => {
-  const events = [];
+  const events: string[] = [];
   const record = { graph: {} };
   const runtime = {
     baseline: async () => events.push('baseline'),
-    execute: async (selectedTests, loadedRecord) => {
+    execute: async (selectedTests: string[], loadedRecord: { graph: Record<string, never> }) => {
       assert.equal(loadedRecord, record);
       events.push(`execute:${selectedTests.join(',')}`);
     },
-    log: (message) => events.push(`log:${message}`),
+    log: (message: string) => events.push(`log:${message}`),
     totalTests: 2,
   };
 
@@ -232,7 +235,7 @@ test('selection run owns cache fallback and targeted safety sequencing', async (
     loadRecord: () => undefined,
     prepare: () => {
       events.push('prepare');
-      return {};
+      return { selection: { kind: 'selected', messages: [], reasons: {}, tests: [] } };
     },
   });
   assert.deepEqual(events, ['baseline']);
@@ -249,6 +252,7 @@ test('selection run owns cache fallback and targeted safety sequencing', async (
         selection: {
           kind: 'selected',
           messages: ['Mapped fixture change.'],
+          reasons: {},
           tests: ['test/a.test.mjs'],
         },
       };
@@ -266,7 +270,7 @@ test('selection run owns cache fallback and targeted safety sequencing', async (
     loadRecord: () => record,
     prepare: () => ({
       emptyMessage: 'No affected tests found.',
-      selection: { kind: 'selected', messages: [], tests: [] },
+      selection: { kind: 'selected', messages: [], reasons: {}, tests: [] },
     }),
   });
   assert.deepEqual(events, ['log:No affected tests found.']);

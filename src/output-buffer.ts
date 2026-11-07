@@ -4,7 +4,7 @@ import { once } from 'node:events';
 
 export const outputMemoryThreshold = 256 * 1024;
 
-async function writeChunk(destination, chunk) {
+async function writeChunk(destination: NodeJS.WritableStream, chunk: Buffer) {
   if (!destination.write(chunk)) await once(destination, 'drain');
 }
 
@@ -12,10 +12,14 @@ export function createOutputBuffer({
   directory,
   name,
   threshold = outputMemoryThreshold,
+}: {
+  directory: string;
+  name: string;
+  threshold?: number;
 }) {
   const file = join(directory, `${name}.log`);
-  let chunks = [];
-  let descriptor;
+  let chunks: Buffer[] = [];
+  let descriptor: number | undefined;
   let size = 0;
 
   function closeFile() {
@@ -25,7 +29,7 @@ export function createOutputBuffer({
   }
 
   return {
-    append(chunk) {
+    append(chunk: string | Buffer) {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       if (descriptor === undefined && size + bytes.length > threshold) {
         descriptor = openSync(file, 'wx', 0o600);
@@ -36,7 +40,7 @@ export function createOutputBuffer({
       else writeSync(descriptor, bytes);
       size += bytes.length;
     },
-    async writeTo(destination) {
+    async writeTo(destination: NodeJS.WritableStream) {
       if (descriptor === undefined) {
         for (const chunk of chunks) await writeChunk(destination, chunk);
         return;

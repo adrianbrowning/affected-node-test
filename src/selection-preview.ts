@@ -1,4 +1,6 @@
-function selectedReason(reason) {
+import type { FallbackReason, SelectionOutcome, SelectionReason } from './selection-run.ts';
+
+function selectedReason(reason: SelectionReason) {
   if (reason.kind === 'dependency') return `changed dependency: ${reason.path.join(' -> ')}`;
   if (reason.kind === 'previous-failure') return 'previously failing test';
   if (reason.kind === 'unrecorded-test') return 'unrecorded test';
@@ -9,10 +11,10 @@ function selectedReason(reason) {
   if (reason.kind === 'watch-trigger') {
     return `watch trigger ${reason.pattern} matched ${reason.file}`;
   }
-  return reason.kind;
+  return 'unknown selection reason';
 }
 
-function fallbackReason(reason) {
+function fallbackReason(reason: FallbackReason | undefined) {
   if (!reason) return;
   if (reason.kind === 'unknown-code') return `unknown code changed: ${reason.files.join(', ')}`;
   if (reason.kind === 'project-configuration') {
@@ -25,10 +27,14 @@ function fallbackReason(reason) {
     return `watch trigger ${reason.pattern} matched ${reason.file} but selected no tests`;
   }
   if (reason.kind === 'no-merge-base') return `no merge base with ${reason.ref}`;
-  return reason.kind;
+  return 'unknown fallback reason';
 }
 
-export function renderSelectionPreview({ allTests, selectedLabel = 'test file(s)', selection }) {
+export function renderSelectionPreview({ allTests, selectedLabel = 'test file(s)', selection }: {
+  allTests: string[];
+  selectedLabel?: string;
+  selection?: SelectionOutcome;
+}) {
   if (!selection || selection.kind === 'baseline') {
     const lines = [`Dry run: full suite (${allTests.length} test file(s)).`];
     const explanation = fallbackReason(selection?.reason);

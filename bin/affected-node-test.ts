@@ -1,78 +1,105 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, watch as watchFiles } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { resolve, relative, join, sep, isAbsolute } from 'node:path';
 import { availableParallelism, tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import { commandHelp, commandNames, topLevelHelp } from '../src/cli-help.mjs';
-import { configurationFingerprint } from '../src/config.mjs';
-import { parseConcurrency } from '../src/concurrency.mjs';
-import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.mjs';
-import { dependenciesForTest } from '../src/dependency-graph.mjs';
-import { diagnose } from '../src/doctor.mjs';
-import { createOutputBuffer } from '../src/output-buffer.mjs';
-import { buildStaticGraph } from '../src/static-graph.mjs';
-import { getGitChanges } from '../src/git-changes.mjs';
+import { commandHelp, isCommandName, topLevelHelp } from '../src/cli-help.ts';
+import type { CommandName } from '../src/cli-help.ts';
+import { configurationFingerprint } from '../src/config.ts';
+import { parseConcurrency } from '../src/concurrency.ts';
+import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.ts';
+import type {
+  DependencyGraph,
+  DependencyRecord,
+  DependencyRunResult,
+  DependencyState,
+  FileState,
+  RecordMetadata,
+} from '../src/dependency-record.ts';
+import { dependenciesForTest } from '../src/dependency-graph.ts';
+import type { DependencyEdge } from '../src/dependency-graph.ts';
+import { diagnose } from '../src/doctor.ts';
+import { createOutputBuffer } from '../src/output-buffer.ts';
+import { buildStaticGraph } from '../src/static-graph.ts';
+import { getGitChanges } from '../src/git-changes.ts';
 import {
   executeSelectionRun,
   selectLastFailed,
   selectTestsForFiles,
   selectTestsSinceLastRun,
-} from '../src/selection-run.mjs';
-import { renderSelectionPreview } from '../src/selection-preview.mjs';
+} from '../src/selection-run.ts';
+import type { BaselineOutcome, SelectedOutcome, SelectionOutcome } from '../src/selection-run.ts';
+import type { PreparedSelection } from '../src/selection-run.ts';
+import { renderSelectionPreview } from '../src/selection-preview.ts';
 import {
   createSelectionPreviewDocument,
   createSelectionRunDocument,
-} from '../src/selection-document.mjs';
-import { runWorkspace } from '../src/workspace.mjs';
-import { sendWatchReady } from '../src/watch-protocol.mjs';
-import { discoverTestFiles } from '../src/test-discovery.mjs';
+  isSelectionCommand,
+} from '../src/selection-document.ts';
+import type { SelectionCommand } from '../src/selection-document.ts';
+import { runWorkspace } from '../src/workspace.ts';
+import { sendWatchReady } from '../src/watch-protocol.ts';
+import { discoverTestFiles } from '../src/test-discovery.ts';
 import {
   conventionDependencyPatterns,
   loadProjectConfig,
   matchingRepositoryFiles,
   repositoryFilesFingerprint,
-} from '../src/project-config.mjs';
+} from '../src/project-config.ts';
+import type { ProjectConfig } from '../src/project-config.ts';
+import { errorMessage, isNodeError } from '../src/errors.ts';
 
 const root = process.cwd();
-const hook = fileURLToPath(new URL('../src/hook.mjs', import.meta.url));
-const [command = 'help', ...args] = process.argv.slice(2);
-const fail = (message) => { console.error(message); process.exit(1); };
-const failUsage = (message, help) => fail(`${message}\n\n${help}`);
-const packageJson = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
-if (command === '--version' || command === '-v') {
+const sourceExtension = import.meta.url.endsWith('.ts') ? 'ts' : 'js';
+const hook = fileURLToPath(new URL(`../src/hook.${sourceExtension}`, import.meta.url));
+const [requestedCommand = 'help', ...args] = process.argv.slice(2);
+const fail = (message: string): never => { console.error(message); process.exit(1); };
+const failUsage = (message: string, help: string): never => fail(`${message}\n\n${help}`);
+const packageRoot = import.meta.url.endsWith('.ts') ? '..' : '../..';
+const parsedPackage: unknown = JSON.parse(readFileSync(fileURLToPath(new URL(`${packageRoot}/package.json`, import.meta.url)), 'utf8'));
+if (!parsedPackage || typeof parsedPackage !== 'object' || !('version' in parsedPackage) ||
+    typeof parsedPackage.version !== 'string') {
+  fail('package.json: version must be a string.');
+}
+const packageVersion = (parsedPackage as { version: string }).version;
+if (requestedCommand === '--version' || requestedCommand === '-v') {
   if (args.length) failUsage(`Unexpected argument: ${args[0]}`, topLevelHelp());
-  console.log(`affected-node-test ${packageJson.version}`);
+  console.log(`affected-node-test ${packageVersion}`);
   process.exit(0);
 }
-if (command === 'help' || command === '--help' || command === '-h') {
+if (requestedCommand === 'help' || requestedCommand === '--help' || requestedCommand === '-h') {
   if (args.length > 1) failUsage(`Unexpected argument: ${args[1]}`, topLevelHelp());
-  if (args[0] && !commandNames.includes(args[0])) {
+  if (args[0] && !isCommandName(args[0])) {
     failUsage(`Unknown command: ${args[0]}`, topLevelHelp());
   }
-  console.log(args[0] ? commandHelp(args[0]) : topLevelHelp());
+  const helpCommand = args[0];
+  console.log(helpCommand && isCommandName(helpCommand) ? commandHelp(helpCommand) : topLevelHelp());
   process.exit(0);
 }
-if (!commandNames.includes(command)) failUsage(`Unknown command: ${command}`, topLevelHelp());
+const command: CommandName = isCommandName(requestedCommand)
+  ? requestedCommand
+  : failUsage(`Unknown command: ${requestedCommand}`, topLevelHelp());
 if (args.includes('--help') || args.includes('-h')) {
   console.log(commandHelp(command));
   process.exit(0);
 }
-function parseArguments(values) {
-  const positionals = [];
+function parseArguments(values: string[]) {
+  const positionals: string[] = [];
   let dryRun = false;
-  let output = 'human';
-  const projectFilters = [];
+  let output: 'human' | 'json' = 'human';
+  const projectFilters: string[] = [];
   let concurrency = Math.max(1, Math.min(4, availableParallelism()));
   for (let index = 0; index < values.length; index += 1) {
     if (values[index] === '--concurrency') {
       const value = values[index + 1];
       try {
         concurrency = parseConcurrency(value, availableParallelism());
-      } catch (error) {
-        failUsage(error.message, commandHelp(command));
+      } catch (error: unknown) {
+        failUsage(errorMessage(error), commandHelp(command));
       }
       index += 1;
     } else if (values[index] === '--dry-run') {
@@ -113,20 +140,21 @@ if (command === 'affected' && options.positionals.length > 1) {
 if (!['affected', 'related'].includes(command) && options.positionals.length) {
   failUsage(`Unexpected argument: ${options.positionals[0]}`, commandHelp(command));
 }
-const activeChildren = new Set();
-const signalExitCodes = { SIGINT: 130, SIGTERM: 143 };
-let interruptedSignal;
-let stopWatching;
-function killChildTree(child, signal) {
+const activeChildren = new Set<ChildProcess>();
+const signalExitCodes = { SIGINT: 130, SIGTERM: 143 } as const;
+type InterruptSignal = keyof typeof signalExitCodes;
+let interruptedSignal: InterruptSignal | undefined;
+let stopWatching: ((signal?: InterruptSignal) => void) | undefined;
+function killChildTree(child: ChildProcess, signal: NodeJS.Signals) {
   if (!child.pid) return;
   try {
     if (process.platform === 'win32') child.kill(signal);
     else process.kill(-child.pid, signal);
-  } catch (error) {
-    if (error.code !== 'ESRCH') throw error;
+  } catch (error: unknown) {
+    if (!isNodeError(error) || error.code !== 'ESRCH') throw error;
   }
 }
-function interrupt(signal) {
+function interrupt(signal: InterruptSignal) {
   if (interruptedSignal) {
     for (const child of activeChildren) killChildTree(child, 'SIGKILL');
     return;
@@ -139,21 +167,23 @@ function interrupt(signal) {
   forceKill.unref();
   stopWatching?.(signal);
 }
-const normal = (p) => p.split(sep).join('/').replace(/^\.\//, '');
-let projectConfig;
-try {
-  projectConfig = loadProjectConfig(root);
-} catch (error) {
-  fail(error.message);
+const normal = (p: string) => p.split(sep).join('/').replace(/^\.\//, '');
+function configuredProject(): ProjectConfig {
+  try {
+    return loadProjectConfig(root);
+  } catch (error: unknown) {
+    return fail(errorMessage(error));
+  }
 }
+const projectConfig = configuredProject();
 if (command === 'doctor') {
   try {
     const report = diagnose(root, projectConfig);
     console.log(report.lines.join('\n'));
     for (const problem of report.problems) console.error(`Problem: ${problem}`);
     process.exit(report.problems.length ? 1 : 0);
-  } catch (error) {
-    fail(error.message);
+  } catch (error: unknown) {
+    fail(errorMessage(error));
   }
 }
 if (projectConfig.projects.length) {
@@ -166,8 +196,8 @@ if (projectConfig.projects.length) {
       cliPath: fileURLToPath(import.meta.url),
     });
     process.exit(status);
-  } catch (error) {
-    fail(error.message);
+  } catch (error: unknown) {
+    fail(errorMessage(error));
   }
 }
 if (options.projectFilters.length) {
@@ -183,19 +213,19 @@ if (isAbsolute(projectConfig.cacheDir) || cacheDirectoryFromRoot === '..' || cac
 const cachePath = join(cacheDirectory, 'graph.json');
 const cacheDirectoryRepositoryPath = normal(cacheDirectoryFromRoot);
 const cacheRepositoryPath = normal(relative(root, cachePath));
-function isCacheRepositoryPath(path) {
+function isCacheRepositoryPath(path: string) {
   return path === cacheRepositoryPath || (
-    cacheDirectoryRepositoryPath && path.startsWith(`${cacheDirectoryRepositoryPath}/`)
+    Boolean(cacheDirectoryRepositoryPath) && path.startsWith(`${cacheDirectoryRepositoryPath}/`)
   );
 }
-function matchingProjectFiles(patterns) {
+function matchingProjectFiles(patterns: string[]) {
   return matchingRepositoryFiles(root, patterns).filter((path) => !isCacheRepositoryPath(path));
 }
 function configuredProjectDependencyFingerprint() {
   return repositoryFilesFingerprint(root, matchingProjectFiles(projectConfig.projectDependencies));
 }
-function resolveConfiguredFiles(key, patterns) {
-  const files = new Set();
+function resolveConfiguredFiles(key: string, patterns: string[]) {
+  const files = new Set<string>();
   for (const pattern of patterns) {
     const matches = matchingProjectFiles([pattern]);
     if (!matches.length) fail(`affected-node-test.config.json: ${key} pattern matched no files: ${pattern}`);
@@ -207,7 +237,7 @@ const setupFiles = resolveConfiguredFiles('setupFiles', projectConfig.setupFiles
 const globalSetupFiles = resolveConfiguredFiles('globalSetupFiles', projectConfig.globalSetupFiles);
 const envFiles = resolveConfiguredFiles('envFiles', projectConfig.envFiles);
 const conventionDependencyFiles = matchingProjectFiles(conventionDependencyPatterns);
-const globalSetupEdges = [];
+const globalSetupEdges: DependencyEdge[] = [];
 let recordGlobalSetupEdges = false;
 if (globalSetupFiles.size) {
   registerHooks({
@@ -218,7 +248,7 @@ if (globalSetupFiles.size) {
         const child = fileURLToPath(resolved.url);
         const parentPath = relative(root, parent);
         const childPath = relative(root, child);
-        const inside = (path) => path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path);
+        const inside = (path: string) => path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path);
         if (inside(parentPath) && inside(childPath)) {
           globalSetupEdges.push([normal(parentPath), normal(childPath)]);
         }
@@ -231,10 +261,27 @@ if (globalSetupFiles.size) {
 function discover() {
   return discoverTestFiles(root, projectConfig);
 }
-function graphForTest(test) {
+type OutputBuffer = ReturnType<typeof createOutputBuffer>;
+type GraphTestResult = {
+  cleanup: () => void;
+  durationMs: number;
+  edges: DependencyEdge[];
+  status: 0 | 1;
+  stderr: OutputBuffer;
+  stdout: OutputBuffer;
+  unresolvedStatic: boolean;
+};
+function parseEdge(line: string): DependencyEdge {
+  const parsed: unknown = JSON.parse(line);
+  if (!Array.isArray(parsed) || parsed.length !== 2 || parsed.some((part) => typeof part !== 'string')) {
+    throw new Error('Worker emitted an invalid dependency edge.');
+  }
+  return [parsed[0], parsed[1]];
+}
+function graphForTest(test: string) {
   const folder = mkdtempSync(join(tmpdir(), 'affected-test-'));
   const log = join(folder, 'edges.jsonl');
-  return new Promise((resolveResult) => {
+  return new Promise<GraphTestResult>((resolveResult) => {
     const startedAt = performance.now();
     const imports = [hook, ...[...setupFiles].map((file) => join(root, file))]
       .flatMap((file) => ['--import', file]);
@@ -243,16 +290,17 @@ function graphForTest(test) {
       { cwd: root, detached: process.platform !== 'win32', stdio: ['inherit', 'pipe', 'pipe'], env: { ...process.env,
         AFFECTED_TESTS_EDGES_FILE: log, AFFECTED_TESTS_ROOT: root } });
     activeChildren.add(child);
+    if (!child.stdout || !child.stderr) throw new Error(`Failed to capture test output for ${test}.`);
     const stdout = createOutputBuffer({ directory: folder, name: 'stdout' });
     const stderr = createOutputBuffer({ directory: folder, name: 'stderr' });
-    child.stdout.on('data', (chunk) => stdout.append(chunk));
-    child.stderr.on('data', (chunk) => stderr.append(chunk));
+    child.stdout.on('data', (chunk: Buffer) => stdout.append(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.append(chunk));
     child.on('error', (error) => stderr.append(`${error.stack ?? error}\n`));
     child.on('close', (code) => {
       activeChildren.delete(child);
       try {
         const edges = existsSync(log)
-          ? readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line))
+          ? readFileSync(log, 'utf8').split('\n').filter(Boolean).map(parseEdge)
           : [];
         for (const setupFile of setupFiles) edges.push([test, setupFile]);
         const staticGraph = buildStaticGraph(root, test, [
@@ -280,7 +328,7 @@ function graphForTest(test) {
     });
   });
 }
-function lifecycleFailure(tests, resultGraph) {
+function lifecycleFailure(tests: string[], resultGraph: DependencyGraph): DependencyRunResult {
   return {
     completedTests: tests,
     failedTests: tests,
@@ -288,20 +336,26 @@ function lifecycleFailure(tests, resultGraph) {
     interrupted: interruptedSignal,
   };
 }
-async function runTests(tests, oldGraph = {}, historicalDurations = {}) {
-  const resultGraph = { ...oldGraph };
-  const teardowns = [];
+async function runTests(
+  tests: string[],
+  oldGraph: DependencyGraph = {},
+  historicalDurations: Record<string, number> = {},
+): Promise<DependencyRunResult> {
+  const resultGraph: DependencyGraph = { ...oldGraph };
+  const teardowns: (() => unknown | Promise<unknown>)[] = [];
   if (tests.length) {
     try {
       for (const file of envFiles) process.loadEnvFile(join(root, file));
-    } catch (error) {
-      console.error(`Environment file loading failed: ${error.stack ?? error}`);
+    } catch (error: unknown) {
+      console.error(`Environment file loading failed: ${error instanceof Error ? error.stack : error}`);
       return lifecycleFailure(tests, resultGraph);
     }
     try {
       for (const file of globalSetupFiles) {
         recordGlobalSetupEdges = true;
-        const module = await import(pathToFileURL(join(root, file)).href);
+        const loaded: unknown = await import(pathToFileURL(join(root, file)).href);
+        if (!loaded || typeof loaded !== 'object') throw new Error(`${file} did not export a module object.`);
+        const module = loaded as { default?: unknown; setup?: unknown; teardown?: unknown };
         const setup = module.setup ?? module.default;
         if (typeof setup !== 'function') {
           throw new Error(`${file} must export setup() or a default setup function.`);
@@ -313,11 +367,11 @@ async function runTests(tests, oldGraph = {}, historicalDurations = {}) {
         }
         if (teardown) teardowns.unshift(teardown);
       }
-    } catch (error) {
-      console.error(`Global setup failed: ${error.stack ?? error}`);
+    } catch (error: unknown) {
+      console.error(`Global setup failed: ${error instanceof Error ? error.stack : error}`);
       for (const teardown of teardowns) {
-        try { await teardown(); } catch (teardownError) {
-          console.error(`Global teardown failed: ${teardownError.stack ?? teardownError}`);
+        try { await teardown(); } catch (teardownError: unknown) {
+          console.error(`Global teardown failed: ${teardownError instanceof Error ? teardownError.stack : teardownError}`);
         }
       }
       return lifecycleFailure(tests, resultGraph);
@@ -327,7 +381,7 @@ async function runTests(tests, oldGraph = {}, historicalDurations = {}) {
   }
   const scheduledTests = [...tests].sort((left, right) =>
     (historicalDurations[right] ?? -1) - (historicalDurations[left] ?? -1) || left.localeCompare(right));
-  const results = new Map();
+  const results = new Map<string, GraphTestResult>();
   let nextIndex = 0;
   async function worker() {
     while (!interruptedSignal && nextIndex < scheduledTests.length) {
@@ -339,10 +393,10 @@ async function runTests(tests, oldGraph = {}, historicalDurations = {}) {
   }
   const workerCount = Math.min(options.concurrency, tests.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  const completedTests = [];
-  const durations = {};
-  const failedTests = [];
-  const unresolvedStaticTests = [];
+  const completedTests: string[] = [];
+  const durations: Record<string, number> = {};
+  const failedTests: string[] = [];
+  const unresolvedStaticTests: string[] = [];
   for (const test of tests) {
     const result = results.get(test);
     if (!result) continue;
@@ -365,8 +419,8 @@ async function runTests(tests, oldGraph = {}, historicalDurations = {}) {
     try {
       recordGlobalSetupEdges = true;
       await teardown();
-    } catch (error) {
-      console.error(`Global teardown failed: ${error.stack ?? error}`);
+    } catch (error: unknown) {
+      console.error(`Global teardown failed: ${error instanceof Error ? error.stack : error}`);
       for (const test of completedTests) {
         if (!failedTests.includes(test)) failedTests.push(test);
       }
@@ -380,18 +434,20 @@ async function runTests(tests, oldGraph = {}, historicalDurations = {}) {
   }
   return { completedTests, durations, failedTests, resultGraph, interrupted: interruptedSignal, unresolvedStaticTests };
 }
-function dependencyClosure(graph, roots) {
-  const adjacency = new Map();
+function dependencyClosure(graph: DependencyGraph, roots: Set<string>) {
+  const adjacency = new Map<string, Set<string>>();
   for (const edges of Object.values(graph)) {
     for (const [parent, child] of edges) {
       if (!adjacency.has(parent)) adjacency.set(parent, new Set());
-      adjacency.get(parent).add(child);
+      adjacency.get(parent)?.add(child);
     }
   }
-  const visited = new Set(roots);
+  const visited = new Set<string>(roots);
   const stack = [...roots];
   while (stack.length) {
-    for (const dependency of adjacency.get(stack.pop()) ?? []) {
+    const parent = stack.pop();
+    if (parent === undefined) break;
+    for (const dependency of adjacency.get(parent) ?? []) {
       if (!visited.has(dependency)) {
         visited.add(dependency);
         stack.push(dependency);
@@ -400,20 +456,20 @@ function dependencyClosure(graph, roots) {
   }
   return [...visited].sort();
 }
-function dependencyState(graph, test) {
-  const state = {};
+function dependencyState(graph: DependencyGraph, test: string): DependencyState {
+  const state: DependencyState = {};
   for (const path of [...dependenciesForTest(graph[test] ?? [], test)].sort()) {
     try {
       const stats = statSync(join(root, path));
       state[path] = { mtimeMs: stats.mtimeMs, size: stats.size };
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
+    } catch (error: unknown) {
+      if (!isNodeError(error) || error.code !== 'ENOENT') throw error;
       state[path] = null;
     }
   }
   return state;
 }
-function recordMetadata(graph) {
+function recordMetadata(graph: DependencyGraph): RecordMetadata {
   const setupDependencies = dependencyClosure(graph, setupFiles);
   const globalSetupDependencies = dependencyClosure(graph, globalSetupFiles);
   const environmentFiles = [...envFiles].sort();
@@ -435,7 +491,11 @@ function recordMetadata(graph) {
     conventionDependencies: repositoryFilesFingerprint(root, conventionDependencyFiles),
   };
 }
-function finishRun(tests, result, previous) {
+type RunStatus =
+  | { exitCode: 0; status: 'passed' }
+  | { exitCode: 1; status: 'failed' }
+  | { exitCode: 130 | 143; signal: InterruptSignal; status: 'interrupted' };
+function finishRun(tests: string[], result: DependencyRunResult, previous?: DependencyRecord): RunStatus {
   const outcome = applyDependencyRun(cachePath, {
     dependencyStateForTest: dependencyState,
     metadataForGraph: recordMetadata,
@@ -445,8 +505,9 @@ function finishRun(tests, result, previous) {
   });
   if (outcome.status === 'interrupted') {
     console.error(`Test run interrupted by ${outcome.signal}; previous graph was left unchanged.`);
-    process.exitCode = signalExitCodes[outcome.signal];
-    return { ...outcome, exitCode: process.exitCode };
+    const exitCode = signalExitCodes[outcome.signal];
+    process.exitCode = exitCode;
+    return { ...outcome, exitCode };
   }
   if (outcome.status === 'passed') {
     process.exitCode = 0;
@@ -456,7 +517,7 @@ function finishRun(tests, result, previous) {
   process.exitCode = 1;
   return { ...outcome, exitCode: 1 };
 }
-async function baseline(previous, selection) {
+async function baseline(previous?: DependencyRecord, selection?: BaselineOutcome) {
   const tests = discover();
   if (options.dryRun) {
     if (options.output === 'json') {
@@ -471,7 +532,10 @@ async function baseline(previous, selection) {
   const runStatus = finishRun(tests, result, previous);
   if (options.output === 'json') printRunDocument(tests, selection, result, runStatus);
 }
-async function executeSelectionOutcome(tests, prepare) {
+async function executeSelectionOutcome(
+  tests: string[],
+  prepare: (record: DependencyRecord) => PreparedSelection,
+) {
   await executeSelectionRun({
     baseline,
     empty: options.output === 'json'
@@ -509,21 +573,30 @@ async function executeSelectionOutcome(tests, prepare) {
     totalTests: tests.length,
   });
 }
-let cacheFallback;
-function printSelectionDocument(tests, selection) {
+let cacheFallback: { kind: 'cache-unavailable'; message: string } | undefined;
+function currentSelectionCommand(): SelectionCommand {
+  if (!isSelectionCommand(command)) throw new Error(`Command ${command} has no selection provider.`);
+  return command;
+}
+function printSelectionDocument(tests: string[], selection?: SelectionOutcome) {
   console.log(JSON.stringify(createSelectionPreviewDocument({
     allTests: tests,
     cacheFallback,
-    command,
+    command: currentSelectionCommand(),
     projectRoot: root,
     selection,
   }), null, 2));
 }
-function printRunDocument(tests, selection, result, runStatus) {
+function printRunDocument(
+  tests: string[],
+  selection: SelectionOutcome | undefined,
+  result: Pick<DependencyRunResult, 'completedTests' | 'failedTests'>,
+  runStatus: RunStatus,
+) {
   console.log(JSON.stringify(createSelectionRunDocument({
     allTests: tests,
     cacheFallback,
-    command,
+    command: currentSelectionCommand(),
     projectRoot: root,
     result,
     runStatus,
@@ -534,16 +607,15 @@ function clearCache() {
   rmSync(cachePath, { force: true });
   console.log(`Cleared cache: ${normal(relative(root, cachePath))}`);
 }
-function diffFiles(ref) {
-  let changes;
+function diffFiles(ref?: string): string[] | null {
   try {
-    changes = getGitChanges({ exclude: isCacheRepositoryPath, ref, root });
-  } catch (error) {
-    fail(error.message);
+    const changes = getGitChanges({ exclude: isCacheRepositoryPath, ref, root });
+    return changes.noMergeBase ? null : changes.files;
+  } catch (error: unknown) {
+    return fail(errorMessage(error));
   }
-  return changes.noMergeBase ? null : changes.files;
 }
-function loadUsableCache(tests) {
+function loadUsableCache(tests: string[]) {
   const loaded = loadDependencyRecord(cachePath, {
     config: configurationFingerprint(root),
     conventionDependencyFiles,
@@ -562,13 +634,13 @@ function loadUsableCache(tests) {
   }
   return loaded.record;
 }
-function dependencyStateChanged(state) {
+function dependencyStateChanged(state: DependencyState) {
   for (const [path, previous] of Object.entries(state)) {
     try {
       const current = statSync(join(root, path));
       if (!previous || current.mtimeMs !== previous.mtimeMs || current.size !== previous.size) return true;
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
+    } catch (error: unknown) {
+      if (!isNodeError(error) || error.code !== 'ENOENT') throw error;
       if (previous !== null) return true;
     }
   }
@@ -590,7 +662,7 @@ async function lastFailed() {
     selectedLabel: 'previously failing test file(s)',
   }));
 }
-async function related(files) {
+async function related(files: string[]) {
   const repositoryFiles = [...new Set(files.map((file) => {
     const path = relative(root, resolve(root, file));
     if (path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path)) {
@@ -606,24 +678,25 @@ async function related(files) {
     selectedLabel: 'related test file(s)',
   }));
 }
-async function affected(ref) {
+async function affected(ref?: string) {
   const changes = diffFiles(ref);
   const tests = discover();
+  if (changes === null) {
+    await executeSelectionOutcome(tests, () => ({
+      selection: {
+        kind: 'baseline',
+        message: `No merge base with ${ref}; running full suite.`,
+        reason: { kind: 'no-merge-base', ref: ref ?? 'unknown ref' },
+      },
+    }));
+    return;
+  }
   await executeSelectionOutcome(tests, (saved) => {
-    if (changes === null) {
-      return {
-        selection: {
-          kind: 'baseline',
-          message: `No merge base with ${ref}; running full suite.`,
-          reason: { kind: 'no-merge-base', ref },
-        },
-      };
-    }
     const selection = selectTestsForFiles({ config: projectConfig, files: changes, record: saved, tests });
     return {
       contextMessages: changes.length
         ? [`Changed files: ${changes.join(', ')}`]
-        : selection.tests.length
+        : selection.kind === 'selected' && selection.tests.length
           ? [`No changed files; rerunning ${saved.failedTests.length} previously failing test file(s).`]
           : [],
       emptyMessage: changes.length ? 'No affected tests found.' : 'No changed files.',
@@ -635,13 +708,13 @@ async function watchMode() {
   await baseline();
   if (interruptedSignal) return;
 
-  const ignoredDirectories = new Set(['.git', 'node_modules', 'coverage', 'dist', 'build']);
-  const pending = new Set();
-  let debounce;
+  const ignoredDirectories = new Set<string>(['.git', 'node_modules', 'coverage', 'dist', 'build']);
+  const pending = new Set<string>();
+  let debounce: NodeJS.Timeout | undefined;
   let running = false;
   let stopped = false;
 
-  const shouldIgnore = (path) => isCacheRepositoryPath(path) ||
+  const shouldIgnore = (path: string) => isCacheRepositoryPath(path) ||
     ignoredDirectories.has(path.split('/')[0]);
 
   const runChanges = async () => {
@@ -656,8 +729,8 @@ async function watchMode() {
         emptyMessage: 'No related tests found.',
         selection: selectTestsForFiles({ config: projectConfig, files, record: saved, tests }),
       }));
-    } catch (error) {
-      console.error(`Watch rerun failed: ${error.stack ?? error}`);
+    } catch (error: unknown) {
+      console.error(`Watch rerun failed: ${error instanceof Error ? error.stack : error}`);
       process.exitCode = 1;
     } finally {
       running = false;
@@ -683,8 +756,8 @@ async function watchMode() {
   });
   console.log('Watching for changes.');
   sendWatchReady();
-  await new Promise((resolveStop) => {
-    stopWatching = (signal) => {
+  await new Promise<void>((resolveStop) => {
+    stopWatching = (signal?: InterruptSignal) => {
       if (stopped) return;
       stopped = true;
       clearTimeout(debounce);
