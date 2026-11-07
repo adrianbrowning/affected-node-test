@@ -317,6 +317,51 @@ test('--help succeeds outside a Git repository', () => {
   }
 });
 
+test('help, version, and invalid input are useful before project configuration loads', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-cli-info-'));
+  writeFileSync(join(cwd, 'affected-node-test.config.json'), '{ invalid json\n');
+  try {
+    const topLevel = run(cwd, '--help');
+    assert.equal(topLevel.status, 0, topLevel.stderr);
+    assert.match(topLevel.stdout, /Affected test selection for Node's native test runner\./);
+    assert.match(topLevel.stdout, /Commands:/);
+    assert.match(topLevel.stdout, /baseline\s+Build the complete dependency graph/);
+    assert.match(topLevel.stdout, /affected \[REF\]\s+Run tests affected by Git changes/);
+    assert.match(topLevel.stdout, /Default concurrency is min\(4, available parallelism\), with a minimum of 1\./);
+
+    const commands = ['baseline', 'affected', 'related', 'since-last-run', 'watch', 'clear-cache'];
+    for (const command of commands) {
+      const result = run(cwd, command, '--help');
+      assert.equal(result.status, 0, `${command}: ${result.stderr}`);
+      assert.match(result.stdout, new RegExp(`Usage: affected-node-test ${command}`));
+      assert.match(result.stdout, /Example:/);
+      assert.equal(result.stderr, '');
+    }
+
+    const helpCommand = run(cwd, 'help', 'affected');
+    assert.equal(helpCommand.status, 0, helpCommand.stderr);
+    assert.match(helpCommand.stdout, /Usage: affected-node-test affected \[REF\]/);
+
+    const version = run(cwd, '--version');
+    assert.equal(version.status, 0, version.stderr);
+    assert.equal(version.stdout, 'affected-node-test 0.1.0\n');
+
+    const invalidOption = run(cwd, 'baseline', '--wat');
+    assert.equal(invalidOption.status, 1);
+    assert.match(invalidOption.stderr, /Unknown option: --wat/);
+    assert.match(invalidOption.stderr, /Usage: affected-node-test baseline/);
+    assert.doesNotMatch(invalidOption.stderr, /SyntaxError|\n\s+at /);
+
+    const invalidCommand = run(cwd, 'wat');
+    assert.equal(invalidCommand.status, 1);
+    assert.match(invalidCommand.stderr, /Unknown command: wat/);
+    assert.match(invalidCommand.stderr, /Usage: affected-node-test/);
+    assert.doesNotMatch(invalidCommand.stderr, /SyntaxError|\n\s+at /);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('--concurrency rejects non-positive values before accessing Git', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-options-'));
   try {

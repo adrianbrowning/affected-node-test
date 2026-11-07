@@ -6,6 +6,7 @@ import { resolve, relative, join, sep, isAbsolute } from 'node:path';
 import { availableParallelism, tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
+import { commandHelp, commandNames, topLevelHelp } from '../src/cli-help.mjs';
 import { configurationFingerprint } from '../src/config.mjs';
 import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.mjs';
 import { dependenciesForTest } from '../src/dependency-graph.mjs';
@@ -29,10 +30,25 @@ import {
 const root = process.cwd();
 const hook = fileURLToPath(new URL('../src/hook.mjs', import.meta.url));
 const [command = 'help', ...args] = process.argv.slice(2);
-const usage = 'Usage:\n  affected-node-test baseline [--concurrency N]\n  affected-node-test affected [git-ref] [--concurrency N]\n  affected-node-test related <file...> [--concurrency N]\n  affected-node-test since-last-run [--concurrency N]\n  affected-node-test watch [--concurrency N]\n  affected-node-test clear-cache';
 const fail = (message) => { console.error(message); process.exit(1); };
+const failUsage = (message, help) => fail(`${message}\n\n${help}`);
+const packageJson = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
+if (command === '--version' || command === '-v') {
+  if (args.length) failUsage(`Unexpected argument: ${args[0]}`, topLevelHelp());
+  console.log(`affected-node-test ${packageJson.version}`);
+  process.exit(0);
+}
 if (command === 'help' || command === '--help' || command === '-h') {
-  console.log(usage);
+  if (args.length > 1) failUsage(`Unexpected argument: ${args[1]}`, topLevelHelp());
+  if (args[0] && !commandNames.includes(args[0])) {
+    failUsage(`Unknown command: ${args[0]}`, topLevelHelp());
+  }
+  console.log(args[0] ? commandHelp(args[0]) : topLevelHelp());
+  process.exit(0);
+}
+if (!commandNames.includes(command)) failUsage(`Unknown command: ${command}`, topLevelHelp());
+if (args.includes('--help') || args.includes('-h')) {
+  console.log(commandHelp(command));
   process.exit(0);
 }
 function parseArguments(values) {
@@ -42,12 +58,12 @@ function parseArguments(values) {
     if (values[index] === '--concurrency') {
       const value = values[index + 1];
       if (!/^\d+$/.test(value ?? '') || Number(value) < 1) {
-        fail('--concurrency must be a positive integer.');
+        failUsage('--concurrency must be a positive integer.', commandHelp(command));
       }
       concurrency = Number(value);
       index += 1;
     } else if (values[index].startsWith('-')) {
-      fail(`Unknown option: ${values[index]}`);
+      failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
     } else {
       positionals.push(values[index]);
     }
@@ -55,6 +71,15 @@ function parseArguments(values) {
   return { concurrency, positionals };
 }
 const options = parseArguments(args);
+if (command === 'related' && !options.positionals.length) {
+  failUsage('related requires at least one FILE.', commandHelp(command));
+}
+if (command === 'affected' && options.positionals.length > 1) {
+  failUsage(`Unexpected argument: ${options.positionals[1]}`, commandHelp(command));
+}
+if (!['affected', 'related'].includes(command) && options.positionals.length) {
+  failUsage(`Unexpected argument: ${options.positionals[0]}`, commandHelp(command));
+}
 const activeChildren = new Set();
 const signalExitCodes = { SIGINT: 130, SIGTERM: 143 };
 let interruptedSignal;
@@ -456,7 +481,6 @@ async function sinceLastRun() {
   }));
 }
 async function related(files) {
-  if (!files.length) fail('Usage: affected-node-test related <file...> [--concurrency N]');
   const repositoryFiles = [...new Set(files.map((file) => {
     const path = relative(root, resolve(root, file));
     if (path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path)) {
@@ -558,21 +582,15 @@ async function watchMode() {
   stopWatching = undefined;
 }
 if (command === 'baseline') {
-  if (options.positionals.length) fail(`Unexpected argument: ${options.positionals[0]}`);
   await baseline();
 } else if (command === 'affected') {
-  if (options.positionals.length > 1) fail('Usage: affected-node-test affected [git-ref] [--concurrency N]');
   await affected(options.positionals[0]);
 } else if (command === 'related') {
   await related(options.positionals);
 } else if (command === 'since-last-run') {
-  if (options.positionals.length) fail(`Unexpected argument: ${options.positionals[0]}`);
   await sinceLastRun();
 } else if (command === 'watch') {
-  if (options.positionals.length) fail(`Unexpected argument: ${options.positionals[0]}`);
   await watchMode();
 } else if (command === 'clear-cache') {
-  if (options.positionals.length) fail(`Unexpected argument: ${options.positionals[0]}`);
   clearCache();
 }
-else fail(`Unknown command: ${command}\n\n${usage}`);

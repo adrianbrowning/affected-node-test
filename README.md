@@ -47,6 +47,8 @@ No configuration is needed for conventional `.test.js`, `.test.mjs`, `.test.cjs`
 | Select dependencies changed on disk without Git | `pnpm exec affected-node-test since-last-run` |
 | Keep selecting tests as files change | `pnpm exec affected-node-test watch` |
 | Remove the saved graph | `pnpm exec affected-node-test clear-cache` |
+| Discover commands or command-specific options | `pnpm exec affected-node-test --help` or `pnpm exec affected-node-test affected --help` |
+| Show the installed version | `pnpm exec affected-node-test --version` |
 
 ## Command reference
 

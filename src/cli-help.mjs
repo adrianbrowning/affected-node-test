@@ -1,0 +1,93 @@
+const concurrency = `Options:
+  --concurrency N  Run at most N test files at once.
+                   Default concurrency is min(4, available parallelism), with a minimum of 1.
+  -h, --help       Show this command's help.`;
+
+const commandHelpText = {
+  baseline: `Build the complete dependency graph by running every discovered test file.
+
+Usage: affected-node-test baseline [--concurrency N]
+
+${concurrency}
+
+Example:
+  affected-node-test baseline --concurrency 4`,
+  affected: `Run tests affected by staged, unstaged, untracked, or committed Git changes.
+
+Usage: affected-node-test affected [REF] [--concurrency N]
+
+REF defaults to working-tree changes. When provided, changes are compared from its merge base with HEAD.
+
+${concurrency}
+
+Example:
+  affected-node-test affected origin/main --concurrency 4`,
+  related: `Run tests related to one or more explicit files without requiring Git.
+
+Usage: affected-node-test related <FILE...> [--concurrency N]
+
+FILE may be project-relative or absolute and must remain inside the project root.
+
+${concurrency}
+
+Example:
+  affected-node-test related src/math.mjs --concurrency 4`,
+  'since-last-run': `Run tests whose recorded dependencies changed on disk since their last successful run.
+
+Usage: affected-node-test since-last-run [--concurrency N]
+
+${concurrency}
+
+Example:
+  affected-node-test since-last-run --concurrency 4`,
+  watch: `Build the graph, watch the project, and serially rerun selected tests.
+
+Usage: affected-node-test watch [--concurrency N]
+
+${concurrency}
+
+Example:
+  affected-node-test watch --concurrency 4`,
+  'clear-cache': `Remove the saved dependency graph. This is safe when no cache exists.
+
+Usage: affected-node-test clear-cache
+
+Options:
+  -h, --help  Show this command's help.
+
+Example:
+  affected-node-test clear-cache`,
+};
+
+export const commandNames = Object.freeze(Object.keys(commandHelpText));
+
+export function commandHelp(command) {
+  return commandHelpText[command];
+}
+
+export function topLevelHelp() {
+  return `Affected test selection for Node's native test runner.
+
+Usage: affected-node-test <COMMAND> [OPTIONS]
+
+Commands:
+  baseline              Build the complete dependency graph.
+  affected [REF]        Run tests affected by Git changes.
+  related <FILE...>     Run tests related to explicit files without Git.
+  since-last-run        Run tests whose recorded dependencies changed on disk.
+  watch                 Watch files and serially rerun selected tests.
+  clear-cache           Remove the saved dependency graph.
+
+Global options:
+  -h, --help       Show this help or COMMAND help.
+  -v, --version    Show the installed version.
+
+Default concurrency is min(4, available parallelism), with a minimum of 1.
+
+Examples:
+  affected-node-test baseline
+  affected-node-test affected origin/main
+  affected-node-test related src/math.mjs
+
+Run affected-node-test help COMMAND for command-specific details.`;
+}
