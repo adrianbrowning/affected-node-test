@@ -38,7 +38,7 @@ This roadmap targets parity with Vitest's affected-test selection subsystem, not
 ## P1: user-facing parity
 
 - [x] Add `related <files...>` selection
-- [ ] Add ref-less `affected` for staged and unstaged changes
+- [x] Add ref-less `affected` for staged, unstaged, and untracked changes
 - [ ] Add `clear-cache` and configurable cache location
 - [ ] Add persistent watch mode
 - [ ] Add multiple project/package roots with isolated caches and triggers

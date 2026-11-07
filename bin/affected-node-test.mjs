@@ -21,7 +21,7 @@ const root = process.cwd();
 const hook = fileURLToPath(new URL('../src/hook.mjs', import.meta.url));
 const cachePath = join(root, '.affected-tests', 'graph.json');
 const [command = 'help', ...args] = process.argv.slice(2);
-const usage = 'Usage:\n  affected-node-test baseline [--concurrency N]\n  affected-node-test affected <git-ref> [--concurrency N]\n  affected-node-test related <file...> [--concurrency N]\n  affected-node-test since-last-run [--concurrency N]';
+const usage = 'Usage:\n  affected-node-test baseline [--concurrency N]\n  affected-node-test affected [git-ref] [--concurrency N]\n  affected-node-test related <file...> [--concurrency N]\n  affected-node-test since-last-run [--concurrency N]';
 const fail = (message) => { console.error(message); process.exit(1); };
 if (command === 'help' || command === '--help' || command === '-h') {
   console.log(usage);
@@ -397,10 +397,13 @@ async function baseline() {
   finishRun(tests, await runTests(tests));
 }
 function diffFiles(ref) {
-  const mergeBase = spawnSync('git', ['merge-base', ref, 'HEAD'], { cwd: root, encoding: 'buffer' });
-  if (mergeBase.status === 1) return null;
-  if (mergeBase.status !== 0) fail(`Git failed: git merge-base ${ref} HEAD\n${mergeBase.stderr}`);
-  const base = mergeBase.stdout.toString('utf8').trim();
+  let base = 'HEAD';
+  if (ref) {
+    const mergeBase = spawnSync('git', ['merge-base', ref, 'HEAD'], { cwd: root, encoding: 'buffer' });
+    if (mergeBase.status === 1) return null;
+    if (mergeBase.status !== 0) fail(`Git failed: git merge-base ${ref} HEAD\n${mergeBase.stderr}`);
+    base = mergeBase.stdout.toString('utf8').trim();
+  }
   const changed = runGit('diff', '--name-only', '-z', base, '--').toString('utf8').split('\0').filter(Boolean);
   // `git diff` does not show untracked additions.
   const untracked = runGit('ls-files', '--others', '--exclude-standard', '-z').toString('utf8').split('\0').filter(Boolean);
@@ -552,7 +555,6 @@ async function related(files) {
   finishRun(tests, await runTests(selectedTests, saved.graph), saved);
 }
 async function affected(ref) {
-  if (!ref) fail('Usage: affected-node-test affected <git-ref>');
   const tests = discover();
   const saved = loadUsableCache(tests);
   if (!saved) return baseline();
@@ -577,7 +579,7 @@ if (command === 'baseline') {
   if (options.positionals.length) fail(`Unexpected argument: ${options.positionals[0]}`);
   await baseline();
 } else if (command === 'affected') {
-  if (options.positionals.length !== 1) fail('Usage: affected-node-test affected <git-ref> [--concurrency N]');
+  if (options.positionals.length > 1) fail('Usage: affected-node-test affected [git-ref] [--concurrency N]');
   await affected(options.positionals[0]);
 } else if (command === 'related') {
   await related(options.positionals);

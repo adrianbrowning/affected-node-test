@@ -9,7 +9,7 @@ Vitest 5.1 has two complementary affected-test models:
 1. `--changed [ref]` asks Git for changed files and selects tests whose transitive import graphs reach those files. Without runtime dependency recording, Vitest builds a static module graph before the run. [`vitest related <files>`](https://vitest.dev/guide/cli#vitest-related) applies the same idea to an explicit file list. [Vitest's `changed` reference](https://vitest.dev/config/changed) describes staged/unstaged selection, refs, project-wide dependencies, and full-rerun triggers.
 2. `--since-last-run` records the files each test actually loaded and later compares their mtimes with that test's last successful record. It does not require Git. New/unrecorded tests and previously failing tests run automatically. [The affected-tests recipe](https://vitest.dev/guide/recipes/affected-tests) explains the distinction and recommends a final full run before completion.
 
-This prototype supports both providers over one runtime-recorded graph: `affected REF` obtains changed paths from Git, while `since-last-run` compares per-test dependency metadata without Git. Its Git provider is therefore closest to Vitest's `--changed` combined with `experimental.recordDependencies`, not Vitest's default static-graph `--changed` behavior.
+This prototype supports both providers over one runtime-recorded graph: `affected [REF]` obtains changed paths from Git, while `since-last-run` compares per-test dependency metadata without Git. Its Git provider is therefore closest to Vitest's `--changed` combined with `experimental.recordDependencies`, not Vitest's default static-graph `--changed` behavior.
 
 The prototype already has meaningful strengths: transitive static and runtime ESM/CommonJS dependency selection, merge-base Git selection including staged and untracked changes, conservative unresolved-import fallbacks, single-project dependency tracking, exact-runtime/configuration cache invalidation, atomic cache writes, sticky reruns for previously failing tests, configurable non-module/full-rerun triggers, and bounded deterministic parallel execution. The largest remaining architectural gap is multi-project isolation.
 
@@ -17,7 +17,7 @@ The prototype already has meaningful strengths: transitive static and runtime ES
 
 | Capability | Vitest behavior | Prototype behavior | Gap | Priority |
 | --- | --- | --- | --- | --- |
-| Git affected selection | `--changed` handles uncommitted staged/unstaged work or accepts a commit/branch; Git supplies changed files and the transitive module graph supplies tests. [Docs](https://vitest.dev/config/changed) | `affected REF` uses the merge base, working tree, staged files, and untracked files. | No ref-less “uncommitted only” form. Otherwise close. | P1 |
+| Git affected selection | `--changed` handles uncommitted staged/unstaged work or accepts a commit/branch; Git supplies changed files and the transitive module graph supplies tests. [Docs](https://vitest.dev/config/changed) | `affected` selects staged, unstaged, and untracked changes; `affected REF` also includes committed changes since the merge base. | Core parity achieved. | Done |
 | Explicit related files | `vitest related file... --run` selects tests related to caller-provided paths; useful with lint-staged. Static mode supports literal static/dynamic imports, not computed dynamic imports. [CLI](https://vitest.dev/guide/cli#vitest-related) | Non-Git `related <files...>` accepts relative or absolute paths and shares static/runtime graphs, mappings, sticky failures, and conservative triggers with Git selection. | Core parity achieved. | Done |
 | Since-last-run selection | `--since-last-run` compares every recorded dependency's mtime with that test's last run, works without Git, runs unrecorded and previously failing tests, and updates records incrementally. [CLI](https://vitest.dev/guide/cli#since-last-run) | Non-Git `since-last-run` compares recorded per-test dependency mtime/size state, includes unrecorded and sticky failed tests, and updates successful records incrementally. | Core parity achieved. | Done |
 | Static dependency graph | Default `--changed`/`related` transforms test graphs before selection, so literal imports can be found without having executed that branch. Runtime records are optional. [Dependency-recording docs](https://vitest.dev/config/experimental#experimental-recorddependencies) | Acorn parses literal ESM imports/re-exports/dynamic imports and CommonJS `require()` calls, then merges runtime edges. Computed imports and parse failures trigger conservative Git selection. | Core JavaScript parity achieved; configured transform syntax still needs an explicit loader/parser contract. | Done |
@@ -55,7 +55,7 @@ This means “Vitest parity” should not be interpreted as making runtime recor
 
 ### P1: user-facing parity
 
-6. Add `related <files...>` and ref-less `affected` for uncommitted changes.
+6. `related <files...>` and ref-less `affected` for uncommitted changes are complete.
 7. Add `clear-cache` and configurable cache location.
 8. Add persistent watch mode once path mapping and project-wide triggers are available.
 9. Add multiple project/package roots with isolated inventories, records, triggers, and fingerprints.

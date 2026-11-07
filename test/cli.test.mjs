@@ -444,6 +444,23 @@ test('staged changes to known dependencies select affected tests', () => {
   }
 });
 
+test('ref-less affected selects tests for uncommitted changes', () => {
+  const cwd = makeRepository({ withOtherTest: true });
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+    writeFileSync(join(cwd, 'src', 'value.mjs'), 'export const value = 1; // unstaged\n');
+
+    const affected = run(cwd, 'affected');
+    assert.equal(affected.status, 0, affected.stderr);
+    assert.match(affected.stdout, /Changed files: src\/value\.mjs/);
+    assert.match(affected.stdout, /Selected 1\/2 test file\(s\)/);
+    assert.match(affected.stdout, /▶ test\/value\.test\.mjs/);
+    assert.doesNotMatch(affected.stdout, /▶ test\/other\.test\.mjs/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('an untracked JavaScript file triggers a conservative full run', () => {
   const cwd = makeRepository();
   try {
