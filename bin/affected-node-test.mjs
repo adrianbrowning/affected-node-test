@@ -18,6 +18,7 @@ import {
   selectTestsForFiles,
   selectTestsSinceLastRun,
 } from '../src/selection-run.mjs';
+import { renderSelectionPreview } from '../src/selection-preview.mjs';
 import { runWorkspace } from '../src/workspace.mjs';
 import { sendWatchReady } from '../src/watch-protocol.mjs';
 import { discoverTestFiles } from '../src/test-discovery.mjs';
@@ -54,6 +55,7 @@ if (args.includes('--help') || args.includes('-h')) {
 }
 function parseArguments(values) {
   const positionals = [];
+  let dryRun = false;
   let concurrency = Math.max(1, Math.min(4, availableParallelism()));
   for (let index = 0; index < values.length; index += 1) {
     if (values[index] === '--concurrency') {
@@ -63,13 +65,18 @@ function parseArguments(values) {
       }
       concurrency = Number(value);
       index += 1;
+    } else if (values[index] === '--dry-run') {
+      if (!['affected', 'related', 'since-last-run'].includes(command)) {
+        failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
+      }
+      dryRun = true;
     } else if (values[index].startsWith('-')) {
       failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
     } else {
       positionals.push(values[index]);
     }
   }
-  return { concurrency, positionals };
+  return { concurrency, dryRun, positionals };
 }
 const options = parseArguments(args);
 if (command === 'related' && !options.positionals.length) {
@@ -113,6 +120,9 @@ try {
   projectConfig = loadProjectConfig(root);
 } catch (error) {
   fail(error.message);
+}
+if (projectConfig.projects.length && options.dryRun) {
+  fail('Workspace --dry-run is not supported yet.');
 }
 if (command === 'doctor') {
   try {
@@ -419,12 +429,24 @@ async function baseline(previous) {
 }
 async function executeSelectionOutcome(tests, prepare) {
   await executeSelectionRun({
-    baseline,
-    execute: async (selectedTests, saved) =>
-      finishRun(tests, await runTests(selectedTests, saved.graph, saved.durations), saved),
+    baseline: async (saved, selection) => {
+      if (!options.dryRun) return baseline(saved);
+      for (const line of renderSelectionPreview({ allTests: tests, selection })) console.log(line);
+    },
+    execute: async (selectedTests, saved, selection, details) => {
+      if (options.dryRun) {
+        for (const line of renderSelectionPreview({
+          allTests: tests,
+          selectedLabel: details.selectedLabel,
+          selection,
+        })) console.log(line);
+        return;
+      }
+      finishRun(tests, await runTests(selectedTests, saved.graph, saved.durations), saved);
+    },
     loadRecord: () => loadUsableCache(tests),
     log: console.log,
-    prepare,
+    prepare: (saved) => ({ ...prepare(saved), announceSelected: !options.dryRun }),
     totalTests: tests.length,
   });
 }
@@ -501,7 +523,11 @@ async function affected(ref) {
   await executeSelectionOutcome(tests, (saved) => {
     if (changes === null) {
       return {
-        selection: { kind: 'baseline', message: `No merge base with ${ref}; running full suite.` },
+        selection: {
+          kind: 'baseline',
+          message: `No merge base with ${ref}; running full suite.`,
+          reason: { kind: 'no-merge-base', ref },
+        },
       };
     }
     const selection = selectTestsForFiles({ config: projectConfig, files: changes, record: saved, tests });

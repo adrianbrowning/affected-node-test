@@ -49,6 +49,7 @@ No configuration is needed for conventional `.test.js`, `.test.mjs`, `.test.cjs`
 | Keep selecting tests as files change | `pnpm exec affected-node-test watch` |
 | Remove the saved graph | `pnpm exec affected-node-test clear-cache` |
 | Validate configuration and discovery without running tests | `pnpm exec affected-node-test doctor` |
+| Preview selected tests and reasons without running them | `pnpm exec affected-node-test affected --dry-run` |
 | Discover commands or command-specific options | `pnpm exec affected-node-test --help` or `pnpm exec affected-node-test affected --help` |
 | Show the installed version | `pnpm exec affected-node-test --version` |
 
@@ -69,6 +70,7 @@ pnpm exec affected-node-test doctor
 - `affected` selects staged, unstaged, and untracked changes. `affected REF` also includes committed changes since the merge base of `REF` and `HEAD`. Both run unrecorded tests and tests whose captured dependency trees contain changed files.
 - `related FILE...` requires no Git repository and runs tests related to explicit repository-relative or absolute paths. It shares the same conservative triggers and mappings as `affected`.
 - `since-last-run` requires no Git repository. It compares each test's recorded dependency metadata with the filesystem, reruns changed, unrecorded, and previously failing tests, and updates successful records incrementally.
+- `--dry-run` previews `affected`, `related`, or `since-last-run` selections and their reasons without launching test workers or updating the graph cache.
 - `watch` performs an initial full run, then persistently watches the project and serially reruns only tests selected by the same dependency graph, conservative triggers, and non-module mappings.
 - `clear-cache` removes the saved dependency graph and is safe to run when no cache exists.
 - The graph cache is tied to the exact Node version, `NODE_OPTIONS`, package manifests, lockfiles, npm configuration, Node version files, and TypeScript configuration files.

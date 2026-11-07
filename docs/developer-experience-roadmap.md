@@ -56,7 +56,7 @@ Acceptance criteria:
 Status: in progress.
 
 - [x] Add structured selection and fallback reasons without changing execution output.
-- [ ] Add read-only preview to finite single-project commands.
+- [x] Add read-only preview to finite single-project commands.
 - [ ] Add workspace preview parity.
 
 User story: a user can see what would run and why without running tests or changing the cache.

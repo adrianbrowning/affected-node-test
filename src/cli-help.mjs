@@ -14,29 +14,32 @@ Example:
   affected-node-test baseline --concurrency 4`,
   affected: `Run tests affected by staged, unstaged, untracked, or committed Git changes.
 
-Usage: affected-node-test affected [REF] [--concurrency N]
+Usage: affected-node-test affected [REF] [--concurrency N] [--dry-run]
 
 REF defaults to working-tree changes. When provided, changes are compared from its merge base with HEAD.
 
 ${concurrency}
+  --dry-run        Show what would run and why without running tests or updating the cache.
 
 Example:
   affected-node-test affected origin/main --concurrency 4`,
   related: `Run tests related to one or more explicit files without requiring Git.
 
-Usage: affected-node-test related <FILE...> [--concurrency N]
+Usage: affected-node-test related <FILE...> [--concurrency N] [--dry-run]
 
 FILE may be project-relative or absolute and must remain inside the project root.
 
 ${concurrency}
+  --dry-run        Show what would run and why without running tests or updating the cache.
 
 Example:
   affected-node-test related src/math.mjs --concurrency 4`,
   'since-last-run': `Run tests whose recorded dependencies changed on disk since their last successful run.
 
-Usage: affected-node-test since-last-run [--concurrency N]
+Usage: affected-node-test since-last-run [--concurrency N] [--dry-run]
 
 ${concurrency}
+  --dry-run        Show what would run and why without running tests or updating the cache.
 
 Example:
   affected-node-test since-last-run --concurrency 4`,

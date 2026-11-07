@@ -429,6 +429,102 @@ test('doctor reports workspace projects and actionable missing-test remediation'
   }
 });
 
+test('dry-run previews finite selections and fallbacks without workers or cache writes', () => {
+  const cwd = makeRepository();
+  const marker = join(cwd, 'worker-ran');
+  const testPath = join(cwd, 'test', 'value.test.mjs');
+  writeFileSync(testPath, [
+    "import { writeFileSync } from 'node:fs';",
+    `writeFileSync(${JSON.stringify(marker)}, 'ran');`,
+    readFileSync(testPath, 'utf8'),
+  ].join('\n'));
+  git(cwd, 'add', 'test/value.test.mjs');
+  git(cwd, 'commit', '-qm', 'add worker marker');
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+    rmSync(marker);
+    const cachePath = join(cwd, '.affected-tests', 'graph.json');
+    const cacheBefore = readFileSync(cachePath, 'utf8');
+    writeFileSync(join(cwd, 'src', 'value.mjs'), 'export const value = 2;\n');
+
+    const affected = run(cwd, 'affected', '--dry-run');
+    assert.equal(affected.status, 0, affected.stderr);
+    assert.match(affected.stdout, /Dry run: selected 1\/1 test file\(s\)\./);
+    assert.match(affected.stdout, /test\/value\.test\.mjs/);
+    assert.match(affected.stdout, /changed dependency: test\/value\.test\.mjs -> src\/value\.mjs/);
+    assert.doesNotMatch(affected.stdout, /▶/);
+
+    const related = run(cwd, 'related', 'src/value.mjs', '--dry-run');
+    assert.equal(related.status, 0, related.stderr);
+    assert.match(related.stdout, /Dry run: selected 1\/1 related test file\(s\)\./);
+    assert.match(related.stdout, /changed dependency: test\/value\.test\.mjs -> src\/value\.mjs/);
+
+    const sinceLastRun = run(cwd, 'since-last-run', '--dry-run');
+    assert.equal(sinceLastRun.status, 0, sinceLastRun.stderr);
+    assert.match(sinceLastRun.stdout, /Dry run: selected 1\/1 test file\(s\) since last run\./);
+    assert.match(sinceLastRun.stdout, /recorded dependency state changed/);
+
+    assert.equal(existsSync(marker), false);
+    assert.equal(readFileSync(cachePath, 'utf8'), cacheBefore);
+
+    writeFileSync(join(cwd, 'src', 'value.mjs'), 'export const value = 1;\n');
+    const noOp = run(cwd, 'affected', '--dry-run');
+    assert.equal(noOp.status, 0, noOp.stderr);
+    assert.match(noOp.stdout, /No changed files\./);
+    assert.equal(existsSync(marker), false);
+
+    writeFileSync(join(cwd, 'test', 'added.test.mjs'), [
+      "import test from 'node:test';",
+      "test('added', () => {});",
+      '',
+    ].join('\n'));
+    const unrecorded = run(cwd, 'affected', '--dry-run');
+    assert.equal(unrecorded.status, 0, unrecorded.stderr);
+    assert.match(unrecorded.stdout, /test\/added\.test\.mjs/);
+    assert.match(unrecorded.stdout, /unrecorded test/);
+    assert.doesNotMatch(unrecorded.stdout, /▶/);
+    rmSync(join(cwd, 'test', 'added.test.mjs'));
+
+    writeFileSync(join(cwd, 'src', 'new.mjs'), 'export const added = true;\n');
+    const fallback = run(cwd, 'affected', '--dry-run');
+    assert.equal(fallback.status, 0, fallback.stderr);
+    assert.match(fallback.stdout, /Dry run: full suite \(1 test file\(s\)\)\./);
+    assert.match(fallback.stdout, /unknown code changed: src\/new\.mjs/);
+    assert.doesNotMatch(fallback.stdout, /▶/);
+    assert.equal(readFileSync(cachePath, 'utf8'), cacheBefore);
+
+    rmSync(join(cwd, '.affected-tests'), { recursive: true, force: true });
+    const cacheMiss = run(cwd, 'affected', '--dry-run');
+    assert.equal(cacheMiss.status, 0, cacheMiss.stderr);
+    assert.match(cacheMiss.stdout, /No graph cache; running full suite\./);
+    assert.match(cacheMiss.stdout, /Dry run: full suite \(1 test file\(s\)\)\./);
+    assert.equal(existsSync(join(cwd, '.affected-tests')), false);
+    assert.equal(existsSync(marker), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('dry-run explains sticky failures without rerunning them', () => {
+  const cwd = makeRepository();
+  const testPath = join(cwd, 'test', 'value.test.mjs');
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+    const passing = readFileSync(testPath, 'utf8');
+    writeFileSync(testPath, `${passing}\nthrow new Error('sticky preview');\n`);
+    assert.equal(run(cwd, 'affected').status, 1);
+    writeFileSync(testPath, passing);
+
+    const preview = run(cwd, 'affected', '--dry-run');
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.match(preview.stdout, /test\/value\.test\.mjs/);
+    assert.match(preview.stdout, /previously failing test/);
+    assert.doesNotMatch(preview.stdout, /▶/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('--concurrency rejects non-positive values before accessing Git', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-options-'));
   try {

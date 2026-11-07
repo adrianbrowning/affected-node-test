@@ -29,8 +29,8 @@ export async function executeSelectionRun({
   }
   await executeSelection({
     ...prepare(record),
-    baseline: () => baseline(record),
-    execute: (selectedTests) => execute(selectedTests, record),
+    baseline: (selection) => baseline(record, selection),
+    execute: (selectedTests, selection, details) => execute(selectedTests, record, selection, details),
     log,
     totalTests,
   });
@@ -38,6 +38,7 @@ export async function executeSelectionRun({
 
 async function executeSelection({
   baseline,
+  announceSelected = true,
   contextMessages = [],
   emptyMessage,
   execute,
@@ -48,7 +49,7 @@ async function executeSelection({
 }) {
   if (selection.kind === 'baseline') {
     log(selection.message);
-    await baseline();
+    await baseline(selection);
     return;
   }
   for (const message of selection.messages) log(message);
@@ -57,8 +58,8 @@ async function executeSelection({
     log(emptyMessage);
     return;
   }
-  log(`Selected ${selection.tests.length}/${totalTests} ${selectedLabel}`);
-  await execute(selection.tests);
+  if (announceSelected) log(`Selected ${selection.tests.length}/${totalTests} ${selectedLabel}`);
+  await execute(selection.tests, selection, { selectedLabel });
 }
 
 export function selectTestsSinceLastRun({ dependencyStateChanged, record, tests }) {
