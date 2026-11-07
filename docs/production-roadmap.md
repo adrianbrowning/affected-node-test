@@ -65,10 +65,10 @@ These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior 
   - [x] Give the record module a small interface for load decisions, successful updates, and failure preservation
   - [x] Keep atomic filesystem replacement as an implementation detail; do not introduce a hypothetical storage-adapter seam
   - [x] Lock corrupt, stale, interrupted, failed, sticky-failure, and incremental-success behavior with focused tests
-- [ ] Concentrate Git change knowledge (**worth scheduling**)
-  - [ ] Give project and workspace callers one interface for root validation, merge-base selection, diffs, untracked files, and exclusions
-  - [ ] Centralize Git subprocess errors and no-merge-base outcomes
-  - [ ] Replace duplicated project/workspace Git rules without changing affected-selection output
+- [x] Concentrate Git change knowledge (**worth scheduling**)
+  - [x] Give project and workspace callers one interface for root validation, merge-base selection, diffs, untracked files, and exclusions
+  - [x] Centralize Git subprocess errors and no-merge-base outcomes
+  - [x] Replace duplicated project/workspace Git rules without changing affected-selection output
 - [ ] Collapse the selection-and-run protocol (**exploratory refactor after the preceding tasks**)
   - [ ] Feed Git, explicit-file, and mtime providers into one normalized selection outcome
   - [ ] Centralize cache loading, conservative fallback, targeted execution, messages, and record updates

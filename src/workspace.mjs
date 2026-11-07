@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { loadProjectConfig } from './project-config.mjs';
+import { getGitChanges } from './git-changes.mjs';
 import { watchReadyMessageType } from './watch-protocol.mjs';
 
 const normal = (path) => path.split(sep).join('/');
@@ -198,40 +199,21 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
       throw new Error('Usage: affected-node-test affected [git-ref] [--concurrency N]');
     }
     const ref = positionals[0];
-    const gitRoot = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' });
-    if (gitRoot.status !== 0) throw new Error(`Git failed: git rev-parse --show-toplevel\n${gitRoot.stderr}`);
-    if (resolve(gitRoot.stdout.trim()) !== root) throw new Error('Run affected from the workspace Git repository root.');
-    let base = 'HEAD';
-    if (ref) {
-      const mergeBase = spawnSync('git', ['merge-base', ref, 'HEAD'], { cwd: root, encoding: 'utf8' });
-      if (mergeBase.status === 1) {
-        console.log(`No merge base with ${ref}; running every project baseline.`);
-        projectRuns = resolvedProjects.map((project) => ({ project, command: 'baseline', args: forwardedOptions }));
-        base = undefined;
-      } else if (mergeBase.status !== 0) {
-        throw new Error(`Git failed: git merge-base ${ref} HEAD\n${mergeBase.stderr}`);
-      } else {
-        base = mergeBase.stdout.trim();
-      }
-    }
-    if (base) {
-      const diff = spawnSync('git', ['diff', '--name-only', '-z', base, '--'], { cwd: root, encoding: 'buffer' });
-      if (diff.status !== 0) throw new Error(`Git failed: git diff --name-only -z ${base} --\n${diff.stderr}`);
-      const untracked = spawnSync('git', ['ls-files', '--others', '--exclude-standard', '-z'], {
-        cwd: root,
-        encoding: 'buffer',
-      });
-      if (untracked.status !== 0) throw new Error(`Git failed: git ls-files --others --exclude-standard -z\n${untracked.stderr}`);
-      const changes = [...new Set([
-        ...diff.stdout.toString('utf8').split('\0').filter(Boolean),
-        ...untracked.stdout.toString('utf8').split('\0').filter(Boolean),
-      ].map(normal))].filter((workspacePath) => {
+    const changed = getGitChanges({
+      exclude: (workspacePath) => {
         const owner = ownerOf(resolvedProjects, workspacePath);
-        if (!owner) return true;
+        if (!owner) return false;
         const projectPath = workspacePath.slice(owner.path.length + 1);
-        return !isProjectCachePath(owner, projectPath);
-      }).sort();
-
+        return isProjectCachePath(owner, projectPath);
+      },
+      ref,
+      root,
+    });
+    if (changed.noMergeBase) {
+      console.log(`No merge base with ${ref}; running every project baseline.`);
+      projectRuns = resolvedProjects.map((project) => ({ project, command: 'baseline', args: forwardedOptions }));
+    } else {
+      const changes = changed.files;
       if (changes.length) console.log(`Changed files: ${changes.join(', ')}`);
       const groupedFiles = new Map(resolvedProjects.map((project) => [project.path, []]));
       const workspaceLevelChange = changes.find((workspacePath) => {

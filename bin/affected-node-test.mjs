@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, watch as watchFiles } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { resolve, relative, join, sep, isAbsolute } from 'node:path';
@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { configurationFingerprint } from '../src/config.mjs';
 import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.mjs';
 import { buildStaticGraph } from '../src/static-graph.mjs';
+import { getGitChanges } from '../src/git-changes.mjs';
 import { runWorkspace } from '../src/workspace.mjs';
 import { sendWatchReady } from '../src/watch-protocol.mjs';
 import {
@@ -74,15 +75,6 @@ function interrupt(signal) {
   stopWatching?.(signal);
 }
 const normal = (p) => p.split(sep).join('/').replace(/^\.\//, '');
-const runGit = (...argv) => {
-  const result = spawnSync('git', argv, { cwd: root, encoding: 'buffer' });
-  if (result.status !== 0) fail(`Git failed: git ${argv.join(' ')}\n${result.stderr}`);
-  return result.stdout;
-};
-if (command === 'affected') {
-  const gitRoot = resolve(String(runGit('rev-parse', '--show-toplevel')).trim());
-  if (gitRoot !== root) fail('Run affected from the Git repository root.');
-}
 let projectConfig;
 try {
   projectConfig = loadProjectConfig(root);
@@ -393,18 +385,13 @@ function clearCache() {
   console.log(`Cleared cache: ${normal(relative(root, cachePath))}`);
 }
 function diffFiles(ref) {
-  let base = 'HEAD';
-  if (ref) {
-    const mergeBase = spawnSync('git', ['merge-base', ref, 'HEAD'], { cwd: root, encoding: 'buffer' });
-    if (mergeBase.status === 1) return null;
-    if (mergeBase.status !== 0) fail(`Git failed: git merge-base ${ref} HEAD\n${mergeBase.stderr}`);
-    base = mergeBase.stdout.toString('utf8').trim();
+  let changes;
+  try {
+    changes = getGitChanges({ exclude: isCacheRepositoryPath, ref, root });
+  } catch (error) {
+    fail(error.message);
   }
-  const changed = runGit('diff', '--name-only', '-z', base, '--').toString('utf8').split('\0').filter(Boolean);
-  // `git diff` does not show untracked additions.
-  const untracked = runGit('ls-files', '--others', '--exclude-standard', '-z').toString('utf8').split('\0').filter(Boolean);
-  return [...new Set([...changed, ...untracked].map(normal))]
-    .filter((path) => !isCacheRepositoryPath(path));
+  return changes.noMergeBase ? null : changes.files;
 }
 function dependencies(edges, test) {
   const adjacency = new Map();
@@ -534,10 +521,10 @@ async function related(files) {
   finishRun(tests, await runTests(selectedTests, saved.graph), saved);
 }
 async function affected(ref) {
+  const changes = diffFiles(ref);
   const tests = discover();
   const saved = loadUsableCache(tests);
   if (!saved) return baseline();
-  const changes = diffFiles(ref);
   if (changes === null) {
     console.log(`No merge base with ${ref}; running full suite.`); return baseline();
   }
