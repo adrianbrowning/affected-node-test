@@ -1,7 +1,29 @@
 import { dependenciesForTest } from './dependency-graph.mjs';
 import { matchesPatterns } from './project-config.mjs';
 
-export async function executeSelection({
+export async function executeSelectionRun({
+  baseline,
+  execute,
+  loadRecord,
+  log,
+  prepare,
+  totalTests,
+}) {
+  const record = loadRecord();
+  if (!record) {
+    await baseline();
+    return;
+  }
+  await executeSelection({
+    ...prepare(record),
+    baseline,
+    execute: (selectedTests) => execute(selectedTests, record),
+    log,
+    totalTests,
+  });
+}
+
+async function executeSelection({
   baseline,
   contextMessages = [],
   emptyMessage,
