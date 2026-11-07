@@ -10,7 +10,7 @@ import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-reco
 import { dependenciesForTest } from '../src/dependency-graph.mjs';
 import { buildStaticGraph } from '../src/static-graph.mjs';
 import { getGitChanges } from '../src/git-changes.mjs';
-import { selectTestsForFiles } from '../src/selection-run.mjs';
+import { selectTestsForFiles, selectTestsSinceLastRun } from '../src/selection-run.mjs';
 import { runWorkspace } from '../src/workspace.mjs';
 import { sendWatchReady } from '../src/watch-protocol.mjs';
 import {
@@ -429,13 +429,10 @@ async function sinceLastRun() {
   const tests = discover();
   const saved = loadUsableCache(tests);
   if (!saved) return baseline();
-  const selected = new Set(saved.failedTests);
-  for (const test of tests) {
-    const state = saved.dependencyStates[test];
-    if (!state || dependencyStateChanged(state)) selected.add(test);
-  }
-  if (!selected.size) { console.log('No tests changed since last run.'); return; }
-  const selectedTests = [...selected].sort();
+  const selection = selectTestsSinceLastRun({ dependencyStateChanged, record: saved, tests });
+  for (const message of selection.messages) console.log(message);
+  if (!selection.tests.length) { console.log('No tests changed since last run.'); return; }
+  const selectedTests = selection.tests;
   console.log(`Selected ${selectedTests.length}/${tests.length} test file(s) since last run`);
   finishRun(tests, await runTests(selectedTests, saved.graph), saved);
 }

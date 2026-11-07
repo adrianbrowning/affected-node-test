@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { selectTestsForFiles } from '../src/selection-run.mjs';
+import { selectTestsForFiles, selectTestsSinceLastRun } from '../src/selection-run.mjs';
 
 const tests = ['test/a.test.mjs', 'test/b.test.mjs'];
 const record = {
@@ -64,5 +64,53 @@ test('file selection returns normalized targeted and conservative outcomes', () 
     kind: 'selected',
     messages: ['Watch trigger matched fixtures/value.txt; selected 1 mapped test file(s).'],
     tests: ['test/a.test.mjs'],
+  });
+});
+
+test('mtime selection returns the same normalized targeted outcome', () => {
+  const changedStates = new Set(['changed']);
+
+  assert.deepEqual(selectTestsSinceLastRun({
+    dependencyStateChanged: (state) => changedStates.has(state),
+    record: {
+      ...record,
+      dependencyStates: {
+        'test/a.test.mjs': 'unchanged',
+        'test/b.test.mjs': 'changed',
+      },
+    },
+    tests,
+  }), {
+    kind: 'selected',
+    messages: [],
+    tests: ['test/b.test.mjs'],
+  });
+
+  assert.deepEqual(selectTestsSinceLastRun({
+    dependencyStateChanged: () => false,
+    record: {
+      ...record,
+      failedTests: [],
+      dependencyStates: { 'test/a.test.mjs': {}, 'test/b.test.mjs': {} },
+    },
+    tests,
+  }), {
+    kind: 'selected',
+    messages: [],
+    tests: [],
+  });
+
+  assert.deepEqual(selectTestsSinceLastRun({
+    dependencyStateChanged: () => false,
+    record: {
+      ...record,
+      failedTests: [],
+      dependencyStates: { 'test/a.test.mjs': {} },
+    },
+    tests,
+  }), {
+    kind: 'selected',
+    messages: [],
+    tests: ['test/b.test.mjs'],
   });
 });

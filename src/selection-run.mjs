@@ -1,6 +1,15 @@
 import { dependenciesForTest } from './dependency-graph.mjs';
 import { matchesPatterns } from './project-config.mjs';
 
+export function selectTestsSinceLastRun({ dependencyStateChanged, record, tests }) {
+  const selected = new Set(record.failedTests);
+  for (const test of tests) {
+    const state = record.dependencyStates[test];
+    if (!state || dependencyStateChanged(state)) selected.add(test);
+  }
+  return { kind: 'selected', messages: [], tests: [...selected].sort() };
+}
+
 export function selectTestsForFiles({ config, files, record, tests }) {
   const forcedChange = files.find((path) => matchesPatterns(path, config.forceRerunTriggers));
   if (forcedChange) {

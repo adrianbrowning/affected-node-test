@@ -70,9 +70,9 @@ These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior 
   - [x] Centralize Git subprocess errors and no-merge-base outcomes
   - [x] Replace duplicated project/workspace Git rules without changing affected-selection output
 - [ ] Collapse the selection-and-run protocol (**exploratory refactor after the preceding tasks**)
-  - [ ] Feed Git, explicit-file, and mtime providers into one normalized selection outcome
+  - [x] Feed Git, explicit-file, and mtime providers into one normalized selection outcome
     - [x] Normalize Git, explicit-file, and watch file-selection outcomes
-    - [ ] Normalize mtime selection with the same outcome interface
+    - [x] Normalize mtime selection with the same outcome interface
   - [ ] Centralize cache loading, conservative fallback, targeted execution, messages, and record updates
   - [ ] Keep provider adapters at the real seam while hiding safety sequencing inside the module
   - [ ] Prove `affected`, `related`, `since-last-run`, and watch retain their current behavior through command-level tests
