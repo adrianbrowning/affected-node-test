@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { commandHelp, commandNames, topLevelHelp } from '../src/cli-help.mjs';
 import { configurationFingerprint } from '../src/config.mjs';
+import { parseConcurrency } from '../src/concurrency.mjs';
 import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.mjs';
 import { dependenciesForTest } from '../src/dependency-graph.mjs';
 import { diagnose } from '../src/doctor.mjs';
@@ -66,10 +67,11 @@ function parseArguments(values) {
   for (let index = 0; index < values.length; index += 1) {
     if (values[index] === '--concurrency') {
       const value = values[index + 1];
-      if (!/^\d+$/.test(value ?? '') || Number(value) < 1) {
-        failUsage('--concurrency must be a positive integer.', commandHelp(command));
+      try {
+        concurrency = parseConcurrency(value, availableParallelism());
+      } catch (error) {
+        failUsage(error.message, commandHelp(command));
       }
-      concurrency = Number(value);
       index += 1;
     } else if (values[index] === '--dry-run') {
       if (!['baseline', 'affected', 'related', 'since-last-run', 'last-failed'].includes(command)) {

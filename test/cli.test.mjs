@@ -736,8 +736,27 @@ test('--concurrency rejects non-positive values before accessing Git', () => {
   try {
     const result = run(cwd, 'baseline', '--concurrency', '0');
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /--concurrency must be a positive integer\./);
+    assert.match(result.stderr, /--concurrency must be a positive integer or a percentage greater than 0% and at most 100%\./);
     assert.doesNotMatch(result.stderr, /not a git repository/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('--concurrency accepts percentages and clamps small allocations to one worker', () => {
+  const cwd = makeParallelRepository({ delays: { a: 50, b: 50, c: 50 } });
+  const tracker = join(cwd, 'processes.log');
+  try {
+    const result = runWithEnv(cwd, { TEST_TRACKER: tracker }, 'baseline', '--concurrency', '1%');
+    assert.equal(result.status, 0, result.stderr);
+    const events = readFileSync(tracker, 'utf8').trim().split('\n');
+    let active = 0;
+    let maximumActive = 0;
+    for (const event of events) {
+      active += event.startsWith('start:') ? 1 : -1;
+      maximumActive = Math.max(maximumActive, active);
+    }
+    assert.equal(maximumActive, 1);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

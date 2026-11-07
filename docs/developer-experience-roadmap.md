@@ -94,7 +94,7 @@ Status: in progress ([last-failed #11](https://github.com/adrianbrowning/affecte
 User stories: a user can immediately rerun failures, allocate a percentage of CPUs, and focus on one workspace project.
 
 - [x] Add `last-failed` with existing sticky-failure semantics.
-- Accept percentage concurrency with deterministic rounding and a minimum of one worker.
+- [x] Accept percentage concurrency with deterministic rounding and a minimum of one worker.
 - Add workspace `--project <glob>` filtering to finite and watch commands.
 
 Acceptance criteria:

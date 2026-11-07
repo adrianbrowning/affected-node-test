@@ -1,6 +1,7 @@
 const concurrency = `Options:
-  --concurrency N  Run at most N test files at once.
-                   Default concurrency is min(4, available parallelism), with a minimum of 1.
+  --concurrency N|P%  Run at most N test files, or floor(P% of available parallelism).
+                      Percentages must be >0% and <=100%, with a minimum of 1 worker.
+                      Default concurrency is min(4, available parallelism), with a minimum of 1.
   -h, --help       Show this command's help.`;
 
 const commandHelpText = {
