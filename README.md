@@ -44,6 +44,7 @@ No configuration is needed for conventional JavaScript or TypeScript `.test` and
 | Create or refresh the complete dependency graph | `pnpm exec affected-node-test baseline` |
 | Select staged, unstaged, and untracked Git changes | `pnpm exec affected-node-test affected` |
 | Select committed changes since a branch or commit | `pnpm exec affected-node-test affected origin/main` |
+| Run affected tests first, then the complement without duplicates | `pnpm exec affected-node-test affected-first origin/main` |
 | Select tests related to explicit paths without Git | `pnpm exec affected-node-test related src/math.mjs` |
 | Select dependencies changed on disk without Git | `pnpm exec affected-node-test since-last-run` |
 | Rerun only tests recorded as failing | `pnpm exec affected-node-test last-failed` |
@@ -63,6 +64,7 @@ pnpm exec affected-node-test baseline --concurrency 4
 pnpm exec affected-node-test affected --concurrency 4
 pnpm exec affected-node-test affected --concurrency 50%
 pnpm exec affected-node-test affected origin/main --concurrency 4
+pnpm exec affected-node-test affected-first origin/main --concurrency 4
 pnpm exec affected-node-test related src/math.mjs --concurrency 4
 pnpm exec affected-node-test since-last-run --concurrency 4
 pnpm exec affected-node-test last-failed --concurrency 4
@@ -76,6 +78,7 @@ pnpm exec affected-node-test affected --project 'packages/api-*'
 
 - `baseline` runs all discovered test files, merges literal static-import edges with observed runtime module-resolution edges, and writes `.affected-tests/graph.json` after a passing suite.
 - `affected` selects staged, unstaged, and untracked changes. `affected REF` also includes committed changes since the merge base of `REF` and `HEAD`. Both run unrecorded tests and tests whose captured dependency trees contain changed files.
+- `affected-first [REF]` partitions the discovered suite once, runs affected tests first, and runs the disjoint complement only after they pass. It performs one coherent graph update. Without a usable graph or merge base, the complete suite is placed in the first phase.
 - `related FILE...` requires no Git repository and runs tests related to explicit repository-relative or absolute paths. It shares the same conservative triggers and mappings as `affected`.
 - `since-last-run` requires no Git repository. It compares each test's recorded dependency metadata with the filesystem, reruns changed, unrecorded, and previously failing tests, and updates successful records incrementally.
 - `last-failed` reruns exactly the failures retained by the graph cache and clearly no-ops after they recover. Without a usable cache it conservatively runs the full suite.
@@ -112,6 +115,28 @@ JSON documents currently use `schemaVersion: 1`. Every document includes `mode`,
 `execution.status` is `passed`, `failed`, or `interrupted`. The CLI process exit code matches `execution.exitCode`.
 
 Workspace documents use the same schema version and add `workspaceRoot`, aggregate `outcome` and `exitCode`, a structured `routing` decision, and a `projects` array containing each project path and its selection document.
+
+### Affected-first gates
+
+Use the one-shot form as a local or pre-push correctness gate when you want fast failure feedback followed by complete coverage:
+
+```sh
+pnpm exec affected-node-test affected-first origin/main
+```
+
+For two CI jobs, upload the portable plan after the first command and download it at the same project-relative path before the second:
+
+```sh
+# Job 1: fast affected partition
+pnpm exec affected-node-test affected-first origin/main \
+  --phase affected --plan .affected-tests/ci-plan.json
+
+# Job 2: disjoint complement; runs only after Job 1 passes
+pnpm exec affected-node-test affected-first \
+  --phase remaining --plan .affected-tests/ci-plan.json
+```
+
+The plan contains no absolute paths. Phase two fails closed if the Git state, Node version, configuration, discovered tests, project identity, or changed-file contents no longer match. Transfer the plan as an artifact; do not regenerate it between jobs. Workspaces use the same commands and store all project plans in the single workspace artifact.
 
 ## Development
 
@@ -196,7 +221,7 @@ A workspace root can delegate to isolated project roots instead of defining sing
 }
 ```
 
-Project roots are validated, deduplicated, rejected when overlapping, and run in lexical order. Each project owns its discovery, configuration, dependency graph, and cache. Workspace `baseline`, `affected`, `since-last-run`, `last-failed`, `related`, `watch`, `clear-cache`, and read-only `doctor` diagnostics are supported. Repeat `--project GLOB` to run only matching project paths; routing continues to respect ownership, so files in excluded projects do not run selected projects. Git and explicit related paths are routed project-relative to their owning runners; workspace-level changes conservatively run every project baseline. Unchanged projects still check since-last-run records so sticky failures are not lost. Workspace watch runs project watchers concurrently, prefixes their output with project paths, and coordinates readiness and signal-driven shutdown. The workspace `projects` option cannot be mixed with single-project options in the same configuration file.
+Project roots are validated, deduplicated, rejected when overlapping, and run in lexical order. Each project owns its discovery, configuration, dependency graph, and cache. Workspace `baseline`, `affected`, `affected-first`, `since-last-run`, `last-failed`, `related`, `watch`, `clear-cache`, and read-only `doctor` diagnostics are supported. `affected-first` completes the affected phase across selected projects before starting any remaining phase, and its split form embeds each project handoff in one portable workspace plan. Repeat `--project GLOB` to run only matching project paths; routing continues to respect ownership, so files in excluded projects do not run selected projects. Git and explicit related paths are routed project-relative to their owning runners; workspace-level changes conservatively run every project baseline. Unchanged projects still check since-last-run records so sticky failures are not lost. Workspace watch runs project watchers concurrently, prefixes their output with project paths, and coordinates readiness and signal-driven shutdown. The workspace `projects` option cannot be mixed with single-project options in the same configuration file.
 
 ## Known limitations
 

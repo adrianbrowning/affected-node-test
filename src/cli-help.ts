@@ -28,6 +28,23 @@ ${concurrency}
 
 Example:
   affected-node-test affected origin/main --concurrency 4`,
+  'affected-first': `Run affected tests first, then complete the suite without duplicate execution.
+
+Usage: affected-node-test affected-first [REF] [--concurrency N] [--output=json]
+       affected-node-test affected-first [REF] --phase affected --plan FILE
+       affected-node-test affected-first --phase remaining --plan FILE
+
+REF defaults to working-tree changes. The remaining partition starts only after the affected partition passes.
+
+${concurrency}
+  --phase PHASE        Run only the affected or remaining phase.
+  --plan FILE          Portable handoff plan used with --phase.
+  --output=json        Emit a versioned phase and partition result.
+
+Example:
+  affected-node-test affected-first origin/main --concurrency 4
+  affected-node-test affected-first origin/main --phase affected --plan .affected-tests/plan.json
+  affected-node-test affected-first --phase remaining --plan .affected-tests/plan.json`,
   related: `Run tests related to one or more explicit files without requiring Git.
 
 Usage: affected-node-test related <FILE...> [--concurrency N] [--dry-run] [--output=json]
@@ -118,6 +135,7 @@ Usage: affected-node-test <COMMAND> [OPTIONS]
 Commands:
   baseline              Build the complete dependency graph.
   affected [REF]        Run tests affected by Git changes.
+  affected-first [REF]  Run affected tests, then the remaining suite.
   related <FILE...>     Run tests related to explicit files without Git.
   since-last-run        Run tests whose recorded dependencies changed on disk.
   last-failed           Rerun test files recorded as failing.

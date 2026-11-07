@@ -17,6 +17,17 @@ function gitText(root: string, args: string[]) {
   return gitBuffer(root, args).toString('utf8');
 }
 
+export function gitRevision(root: string, ref = 'HEAD') {
+  return gitText(root, ['rev-parse', ref]).trim();
+}
+
+export function gitMergeBase(root: string, ref: string) {
+  const result = spawnSync('git', ['merge-base', ref, 'HEAD'], { cwd: root, encoding: 'utf8' });
+  if (result.status === 1) return null;
+  if (result.status !== 0) throw new Error(`Git failed: git merge-base ${ref} HEAD\n${result.stderr}`);
+  return result.stdout.trim();
+}
+
 function validateGitRoot(root: string) {
   const gitRoot = gitText(root, ['rev-parse', '--show-toplevel']).trim();
   const canonical = (path: string) => {
@@ -36,12 +47,9 @@ export function getGitChanges({ root, ref, exclude = () => false }: {
   validateGitRoot(root);
   let base = 'HEAD';
   if (ref) {
-    const mergeBase = spawnSync('git', ['merge-base', ref, 'HEAD'], { cwd: root, encoding: 'utf8' });
-    if (mergeBase.status === 1) return { noMergeBase: true };
-    if (mergeBase.status !== 0) {
-      throw new Error(`Git failed: git merge-base ${ref} HEAD\n${mergeBase.stderr}`);
-    }
-    base = mergeBase.stdout.trim();
+    const mergeBase = gitMergeBase(root, ref);
+    if (mergeBase === null) return { noMergeBase: true };
+    base = mergeBase;
   }
   const changed = gitBuffer(root, ['diff', '--name-only', '-z', base, '--'])
     .toString('utf8').split('\0').filter(Boolean);

@@ -1,8 +1,8 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { statSync } from 'node:fs';
+import { readFileSync, rmSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
-import { loadProjectConfig, matchesPatterns } from './project-config.ts';
+import { loadProjectConfig, matchesPatterns, repositoryFilesFingerprint } from './project-config.ts';
 import { getGitChanges } from './git-changes.ts';
 import { selectionProvider } from './selection-document.ts';
 import type { SelectionCommand } from './selection-document.ts';
@@ -10,13 +10,14 @@ import { watchReadyMessageType } from './watch-protocol.ts';
 import type { CommandName } from './cli-help.ts';
 import { isNodeError } from './errors.ts';
 import { terminateProcessTree } from './process-control.ts';
+import { writeJsonAtomically } from './cache.ts';
 
 export type WorkspaceProject = {
   cacheDirectoryPath: string;
   path: string;
   root: string;
 };
-type WorkspaceCommand = SelectionCommand | 'clear-cache' | 'watch';
+type WorkspaceCommand = SelectionCommand | 'affected-first' | 'clear-cache' | 'watch';
 type ProjectRun = {
   args: string[];
   command: WorkspaceCommand;
@@ -24,7 +25,7 @@ type ProjectRun = {
   suppressNoop?: boolean;
 };
 const supportedCommands: WorkspaceCommand[] = [
-  'baseline', 'since-last-run', 'last-failed', 'clear-cache', 'related', 'affected', 'watch',
+  'baseline', 'since-last-run', 'last-failed', 'clear-cache', 'related', 'affected', 'affected-first', 'watch',
 ];
 
 const normal = (path: string) => path.split(sep).join('/');
@@ -202,6 +203,210 @@ export function resolveWorkspaceProjects({ root, projects }: { projects: string[
   return resolvedProjects;
 }
 
+function workspaceAffectedChanges({ root, projects, ref, excludePath }: {
+  excludePath?: string;
+  projects: WorkspaceProject[];
+  ref?: string;
+  root: string;
+}) {
+  const changed = getGitChanges({
+    exclude: (workspacePath) => {
+      if (workspacePath === excludePath) return true;
+      const owner = ownerOf(projects, workspacePath);
+      if (!owner) return false;
+      return isProjectCachePath(owner, workspacePath.slice(owner.path.length + 1));
+    },
+    ref,
+    root,
+  });
+  if (changed.noMergeBase) return { fallback: true, files: [] as string[] };
+  return {
+    fallback: changed.files.some((workspacePath) => !ownerOf(projects, workspacePath)),
+    files: changed.files,
+  };
+}
+
+type WorkspacePartitionPlan = {
+  changes: string[];
+  changesFingerprint: string;
+  fallback: boolean;
+  projects: { path: string; plan: unknown }[];
+  ref: string | null;
+  schemaVersion: 1;
+};
+
+function readWorkspacePartitionPlan(path: string): WorkspacePartitionPlan {
+  let value: unknown;
+  try {
+    value = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (error: unknown) {
+    throw new Error(`Workspace partition plan is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Workspace partition plan is invalid: expected an object.');
+  }
+  const plan = value as Record<string, unknown>;
+  if (plan.schemaVersion !== 1 || !Array.isArray(plan.changes) ||
+      plan.changes.some((file) => typeof file !== 'string') || typeof plan.changesFingerprint !== 'string' ||
+      typeof plan.fallback !== 'boolean' || !(plan.ref === null || typeof plan.ref === 'string') ||
+      !Array.isArray(plan.projects) || plan.projects.some((project) => !project || typeof project !== 'object' ||
+        Array.isArray(project) || typeof (project as Record<string, unknown>).path !== 'string' ||
+        !('plan' in project))) {
+    throw new Error('Workspace partition plan is invalid or unsupported.');
+  }
+  return plan as WorkspacePartitionPlan;
+}
+
+function splitAffectedFirstArgs(args: string[]) {
+  const commandArgs: string[] = [];
+  let phase: 'affected' | 'remaining' | undefined;
+  let plan: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === '--phase') {
+      const value = args[index + 1];
+      if (value !== 'affected' && value !== 'remaining') throw new Error('--phase must be affected or remaining.');
+      phase = value;
+      index += 1;
+    } else if (args[index] === '--plan') {
+      plan = args[index + 1];
+      if (!plan || plan.startsWith('-')) throw new Error('--plan requires a workspace-relative path.');
+      index += 1;
+    } else {
+      commandArgs.push(args[index]);
+    }
+  }
+  if (Boolean(phase) !== Boolean(plan)) throw new Error('--phase and --plan must be used together.');
+  return { commandArgs, phase, plan };
+}
+
+function runWorkspaceAffectedFirst({ root, projects, args, cliPath }: {
+  args: string[];
+  cliPath: string;
+  projects: WorkspaceProject[];
+  root: string;
+}) {
+  const split = splitAffectedFirstArgs(args);
+  const { forwardedOptions, positionals } = splitCommandArgs(split.commandArgs);
+  if (positionals.length > 1) throw new Error('Usage: affected-node-test affected-first [git-ref] [--concurrency N]');
+  if (split.phase === 'remaining' && positionals.length) {
+    throw new Error('The remaining phase reads REF from the plan; do not pass REF again.');
+  }
+  const workspacePlanPath = split.plan ? resolve(root, split.plan) : undefined;
+  if (workspacePlanPath) {
+    const relativePlan = relative(root, workspacePlanPath);
+    if (isAbsolute(split.plan ?? '') || relativePlan === '..' || relativePlan.startsWith(`..${sep}`)) {
+      throw new Error('--plan must be a workspace-relative path within the workspace root.');
+    }
+  }
+  const stored = split.phase === 'remaining' && workspacePlanPath
+    ? readWorkspacePartitionPlan(workspacePlanPath)
+    : undefined;
+  const ref = stored?.ref ?? positionals[0];
+  const excludePath = workspacePlanPath ? normal(relative(root, workspacePlanPath)) : undefined;
+  const changes = workspaceAffectedChanges({ root, projects, ref: ref ?? undefined, excludePath });
+  if (stored && (stored.fallback !== changes.fallback ||
+      JSON.stringify(stored.changes) !== JSON.stringify(changes.files) ||
+      stored.changesFingerprint !== repositoryFilesFingerprint(root, changes.files))) {
+    throw new Error('Workspace partition plan is stale: changed files differ; rerun the affected phase.');
+  }
+  const jsonOutput = forwardedOptions.includes('--output=json');
+  const plans = projects.map((project) => ({
+    project,
+    path: `.affected-tests/workspace-partition-${process.pid}.json`,
+    changes: changes.fallback
+      ? null
+      : changes.files
+        .filter((file) => ownerOf(projects, file)?.path === project.path)
+        .map((file) => file.slice(project.path.length + 1)),
+  }));
+  const documents: { affected?: unknown; path: string; remaining?: unknown }[] =
+    projects.map((project) => ({ path: project.path }));
+  const embedded = new Map(stored?.projects.map((item) => [item.path, item.plan]) ?? []);
+  if (stored && (stored.projects.length !== projects.length || projects.some((project) => !embedded.has(project.path)))) {
+    throw new Error('Workspace partition plan affected phase did not complete successfully; rerun the affected phase.');
+  }
+  if (stored && stored.projects.some(({ plan }) => !plan || typeof plan !== 'object' || Array.isArray(plan) ||
+      (plan as Record<string, unknown>).state !== 'affected-passed')) {
+    throw new Error('Workspace partition plan affected phase did not complete successfully; rerun the affected phase.');
+  }
+  const runPhase = (phase: 'affected' | 'remaining') => {
+    for (let index = 0; index < plans.length; index += 1) {
+      const item = plans[index];
+      if (phase === 'remaining') writeJsonAtomically(resolve(item.project.root, item.path), embedded.get(item.project.path));
+      const childArgs = [
+        cliPath,
+        'affected-first',
+        ...(phase === 'affected' && ref ? [ref] : []),
+        '--phase', phase,
+        '--plan', item.path,
+        ...forwardedOptions,
+      ];
+      const result = spawnSync(process.execPath, childArgs, {
+        cwd: item.project.root,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          AFFECTED_NODE_TEST_CHANGED_FILES: JSON.stringify(item.changes),
+          AFFECTED_NODE_TEST_PROJECT_PATH: item.project.path,
+        },
+      });
+      if (result.error) throw result.error;
+      if (jsonOutput) {
+        try {
+          documents[index][phase] = JSON.parse(result.stdout);
+        } catch {
+          throw new Error(`Project ${item.project.path} did not produce valid JSON output.`);
+        }
+      } else {
+        console.log(`\nProject ${item.project.path} — ${phase}`);
+        if (result.stdout) process.stdout.write(result.stdout);
+      }
+      if (result.stderr) process.stderr.write(result.stderr);
+      if (phase === 'affected' || result.status === 0) {
+        embedded.set(item.project.path, JSON.parse(readFileSync(resolve(item.project.root, item.path), 'utf8')));
+      }
+      if (result.status !== 0) return result.status ?? 1;
+    }
+    return 0;
+  };
+  try {
+    let exitCode = 0;
+    if (split.phase !== 'remaining') exitCode = runPhase('affected');
+    if (workspacePlanPath && split.phase === 'affected') {
+      writeJsonAtomically(workspacePlanPath, {
+        schemaVersion: 1,
+        ref: ref ?? null,
+        fallback: changes.fallback,
+        changes: changes.files,
+        changesFingerprint: repositoryFilesFingerprint(root, changes.files),
+        projects: projects.filter((project) => embedded.has(project.path))
+          .map((project) => ({ path: project.path, plan: embedded.get(project.path) })),
+      });
+    }
+    if (exitCode === 0 && split.phase !== 'affected') exitCode = runPhase('remaining');
+    if (workspacePlanPath && split.phase === 'remaining') {
+      writeJsonAtomically(workspacePlanPath, {
+        ...stored,
+        projects: projects.map((project) => ({ path: project.path, plan: embedded.get(project.path) })),
+      });
+    }
+    if (jsonOutput) {
+      console.log(JSON.stringify({
+        schemaVersion: 1,
+        command: 'affected-first',
+        mode: 'run',
+        outcome: exitCode === 0 ? 'passed' : 'failed',
+        exitCode,
+        workspaceRoot: root,
+        projects: documents,
+      }, null, 2));
+    }
+    return exitCode;
+  } finally {
+    for (const item of plans) rmSync(resolve(item.project.root, item.path), { force: true });
+  }
+}
+
 export async function runWorkspace({ root, projects, command: requestedCommand, args: rawArgs, cliPath }: {
   args: string[];
   cliPath: string;
@@ -222,6 +427,9 @@ export async function runWorkspace({ root, projects, command: requestedCommand, 
     : allProjects;
   if (!resolvedProjects.length) {
     throw new Error(`No workspace projects matched ${projectFilters.map((filter) => `--project ${filter}`).join(', ')}.`);
+  }
+  if (command === 'affected-first') {
+    return runWorkspaceAffectedFirst({ root, projects: resolvedProjects, args, cliPath });
   }
   const jsonOutput = args.includes('--output=json');
   const log = jsonOutput ? console.error : console.log;

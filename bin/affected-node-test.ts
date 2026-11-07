@@ -7,6 +7,7 @@ import { resolve, relative, join, sep, isAbsolute } from 'node:path';
 import { availableParallelism, tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
+import { writeJsonAtomically } from '../src/cache.ts';
 import { commandHelp, isCommandName, topLevelHelp } from '../src/cli-help.ts';
 import type { CommandName } from '../src/cli-help.ts';
 import { configurationFingerprint } from '../src/config.ts';
@@ -25,7 +26,7 @@ import type { DependencyEdge } from '../src/dependency-graph.ts';
 import { diagnose } from '../src/doctor.ts';
 import { createOutputBuffer } from '../src/output-buffer.ts';
 import { buildStaticGraph } from '../src/static-graph.ts';
-import { getGitChanges } from '../src/git-changes.ts';
+import { getGitChanges, gitMergeBase, gitRevision } from '../src/git-changes.ts';
 import {
   executeSelectionRun,
   selectLastFailed,
@@ -54,6 +55,15 @@ import type { ProjectConfig } from '../src/project-config.ts';
 import { errorMessage, isNodeError } from '../src/errors.ts';
 import { initializeProject } from '../src/init.ts';
 import { terminateProcessTree } from '../src/process-control.ts';
+import {
+  createPartitionPlan,
+  parsePartitionPlan,
+  partitionTests,
+  recordAffectedResult,
+  recordRemainingResult,
+  validatePartitionIdentity,
+} from '../src/partition-plan.ts';
+import type { PartitionIdentity, PartitionPlan } from '../src/partition-plan.ts';
 
 const root = process.cwd();
 const sourceExtension = import.meta.url.endsWith('.ts') ? 'ts' : 'js';
@@ -110,6 +120,8 @@ function parseArguments(values: string[]) {
   let output: 'human' | 'json' = 'human';
   const projectFilters: string[] = [];
   let concurrency = Math.max(1, Math.min(4, availableParallelism()));
+  let phase: 'affected' | 'remaining' | undefined;
+  let plan: string | undefined;
   for (let index = 0; index < values.length; index += 1) {
     if (values[index] === '--concurrency') {
       const value = values[index + 1];
@@ -125,7 +137,7 @@ function parseArguments(values: string[]) {
       }
       dryRun = true;
     } else if (values[index] === '--output=json') {
-      if (!['baseline', 'affected', 'related', 'since-last-run', 'last-failed'].includes(command)) {
+      if (!['baseline', 'affected', 'affected-first', 'related', 'since-last-run', 'last-failed'].includes(command)) {
         failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
       }
       output = 'json';
@@ -139,22 +151,42 @@ function parseArguments(values: string[]) {
       }
       projectFilters.push(value);
       index += 1;
+    } else if (values[index] === '--phase') {
+      if (command !== 'affected-first') failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
+      const value = values[index + 1];
+      if (value !== 'affected' && value !== 'remaining') {
+        failUsage('--phase must be affected or remaining.', commandHelp(command));
+      }
+      phase = value === 'affected' ? 'affected' : 'remaining';
+      index += 1;
+    } else if (values[index] === '--plan') {
+      if (command !== 'affected-first') failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
+      const value = values[index + 1];
+      if (!value || value.startsWith('-')) failUsage('--plan requires a project-relative path.', commandHelp(command));
+      plan = value;
+      index += 1;
     } else if (values[index].startsWith('-')) {
       failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
     } else {
       positionals.push(values[index]);
     }
   }
-  return { concurrency, dryRun, output, positionals, projectFilters };
+  return { concurrency, dryRun, output, phase, plan, positionals, projectFilters };
 }
 const options = parseArguments(args);
 if (command === 'related' && !options.positionals.length) {
   failUsage('related requires at least one FILE.', commandHelp(command));
 }
-if (command === 'affected' && options.positionals.length > 1) {
+if (['affected', 'affected-first'].includes(command) && options.positionals.length > 1) {
   failUsage(`Unexpected argument: ${options.positionals[1]}`, commandHelp(command));
 }
-if (!['affected', 'related'].includes(command) && options.positionals.length) {
+if (command === 'affected-first' && Boolean(options.phase) !== Boolean(options.plan)) {
+  failUsage('--phase and --plan must be used together.', commandHelp(command));
+}
+if (command === 'affected-first' && options.phase === 'remaining' && options.positionals.length) {
+  failUsage('The remaining phase reads REF from the plan; do not pass REF again.', commandHelp(command));
+}
+if (!['affected', 'affected-first', 'related'].includes(command) && options.positionals.length) {
   failUsage(`Unexpected argument: ${options.positionals[0]}`, commandHelp(command));
 }
 const activeChildren = new Set<ChildProcess>();
@@ -712,6 +744,185 @@ async function affected(ref?: string) {
     };
   });
 }
+function combineRunResults(first: DependencyRunResult, second: DependencyRunResult): DependencyRunResult {
+  return {
+    completedTests: [...first.completedTests, ...second.completedTests],
+    durations: { ...first.durations, ...second.durations },
+    failedTests: [...first.failedTests, ...second.failedTests],
+    interrupted: second.interrupted ?? first.interrupted,
+    resultGraph: second.resultGraph,
+    unresolvedStaticTests: [
+      ...(first.unresolvedStaticTests ?? []),
+      ...(second.unresolvedStaticTests ?? []),
+    ],
+  };
+}
+function resolvePlanPath(path: string) {
+  const resolved = resolve(root, path);
+  const fromRoot = relative(root, resolved);
+  if (isAbsolute(path) || fromRoot === '..' || fromRoot.startsWith(`..${sep}`)) {
+    fail('--plan must be a project-relative path within the project root.');
+  }
+  return resolved;
+}
+function partitionIdentity(ref: string | undefined, tests: string[], changes: string[] | null): PartitionIdentity {
+  return {
+    changes: changes ?? [],
+    changesFingerprint: repositoryFilesFingerprint(root, changes ?? []),
+    comparisonBase: ref ? gitMergeBase(root, ref) : gitRevision(root),
+    config: configurationFingerprint(root),
+    head: gitRevision(root),
+    node: process.versions.node,
+    projectPath: process.env.AFFECTED_NODE_TEST_PROJECT_PATH ?? '.',
+    tests,
+  };
+}
+function affectedFirstChanges(ref?: string): string[] | null {
+  const supplied = process.env.AFFECTED_NODE_TEST_CHANGED_FILES;
+  if (supplied === undefined) return diffFiles(ref);
+  try {
+    const parsed: unknown = JSON.parse(supplied);
+    if (parsed === null) return null;
+    if (!Array.isArray(parsed) || parsed.some((file) => typeof file !== 'string')) {
+      throw new Error('expected a JSON string array or null');
+    }
+    return [...new Set(parsed)].sort();
+  } catch (error: unknown) {
+    return fail(`Invalid internal workspace change set: ${errorMessage(error)}`);
+  }
+}
+function readPartitionPlan(path: string): PartitionPlan {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    return parsePartitionPlan(parsed);
+  } catch (error: unknown) {
+    return fail(`Partition plan is invalid: ${errorMessage(error)}`);
+  }
+}
+function reportPartitionFailure(result: DependencyRunResult) {
+  if (result.interrupted) {
+    console.error(`Test run interrupted by ${result.interrupted}; dependency graph was left unchanged.`);
+    process.exitCode = signalExitCodes[result.interrupted];
+  } else if (result.failedTests.length) {
+    console.error('Tests failed; dependency graph was left unchanged.');
+    process.exitCode = 1;
+  }
+}
+function printPartitionDocument({
+  completedTests,
+  partition,
+  phase,
+  plan,
+}: {
+  completedTests: string[];
+  partition: ReturnType<typeof partitionTests>;
+  phase: 'affected' | 'all' | 'remaining';
+  plan?: PartitionPlan;
+}) {
+  if (options.output !== 'json') return;
+  const exitCode = process.exitCode ?? 0;
+  console.log(JSON.stringify({
+    schemaVersion: 1,
+    command: 'affected-first',
+    mode: 'run',
+    phase,
+    outcome: exitCode === 0 ? 'passed' : interruptedSignal ? 'interrupted' : 'failed',
+    exitCode,
+    partitions: {
+      affected: partition.affected,
+      remaining: partition.remaining,
+    },
+    completedTests,
+    pendingTests: plan?.state === 'affected-passed' ? partition.remaining : [],
+    planState: plan?.state,
+  }, null, 2));
+}
+function affectedFirstSelection(
+  tests: string[],
+  saved: DependencyRecord | undefined,
+  changes: string[] | null,
+  ref?: string,
+): SelectionOutcome | undefined {
+  if (!saved) return;
+  return changes === null
+    ? {
+        kind: 'baseline',
+        message: `No merge base with ${ref}; running full suite in the affected phase.`,
+        reason: { kind: 'no-merge-base', ref: ref ?? 'unknown ref' },
+      }
+    : selectTestsForFiles({ config: projectConfig, files: changes, record: saved, tests });
+}
+async function affectedFirstPhase(ref: string | undefined, phase: 'affected' | 'remaining', planFile: string) {
+  const tests = discover();
+  const path = resolvePlanPath(planFile);
+  if (phase === 'affected') {
+    const changes = affectedFirstChanges(ref);
+    const saved = loadUsableCache(tests);
+    const partition = partitionTests(tests, affectedFirstSelection(tests, saved, changes, ref));
+    let plan = createPartitionPlan({ identity: partitionIdentity(ref, tests, changes), partition, ref });
+    (options.output === 'json' ? console.error : console.log)(
+      `Affected phase: ${partition.affected.length}/${tests.length} test file(s)`);
+    const result = await runTests(partition.affected, {}, saved?.durations);
+    plan = recordAffectedResult(plan, result);
+    writeJsonAtomically(path, plan);
+    reportPartitionFailure(result);
+    printPartitionDocument({ completedTests: result.completedTests, partition, phase, plan });
+    return;
+  }
+
+  let plan: PartitionPlan = readPartitionPlan(path);
+  if (plan.state !== 'affected-passed') {
+    fail(`Partition plan cannot run the remaining phase from state ${plan.state}; rerun the affected phase.`);
+  }
+  const changes = affectedFirstChanges(plan.ref ?? undefined);
+  try {
+    validatePartitionIdentity(plan, partitionIdentity(plan.ref ?? undefined, tests, changes));
+  } catch (error: unknown) {
+    fail(errorMessage(error));
+  }
+  const saved = loadUsableCache(tests);
+  (options.output === 'json' ? console.error : console.log)(
+    `Remaining phase: ${plan.remaining.length}/${tests.length} test file(s)`);
+  const result = await runTests(plan.remaining, plan.affectedResult?.resultGraph ?? {}, {
+    ...(saved?.durations ?? {}),
+    ...(plan.affectedResult?.durations ?? {}),
+  });
+  const affectedResult = plan.affectedResult;
+  if (!affectedResult) return fail('Partition plan lost its affected phase result.');
+  plan = recordRemainingResult(plan, result);
+  writeJsonAtomically(path, plan);
+  const combined = combineRunResults(affectedResult, result);
+  finishRun(tests, combined, saved);
+  printPartitionDocument({ completedTests: combined.completedTests, partition: plan, phase, plan });
+}
+async function affectedFirst(ref?: string) {
+  if (options.phase && options.plan) {
+    await affectedFirstPhase(ref, options.phase, options.plan);
+    return;
+  }
+  const tests = discover();
+  const saved = loadUsableCache(tests);
+  const changes = affectedFirstChanges(ref);
+  const selection = affectedFirstSelection(tests, saved, changes, ref);
+  const partition = partitionTests(tests, selection);
+  (options.output === 'json' ? console.error : console.log)(
+    `Affected phase: ${partition.affected.length}/${tests.length} test file(s)`);
+  const first = await runTests(partition.affected, saved?.graph ?? {}, saved?.durations);
+  if (first.failedTests.length || first.interrupted) {
+    finishRun(tests, first, saved);
+    printPartitionDocument({ completedTests: first.completedTests, partition, phase: 'all' });
+    return;
+  }
+  (options.output === 'json' ? console.error : console.log)(
+    `Remaining phase: ${partition.remaining.length}/${tests.length} test file(s)`);
+  const second = await runTests(partition.remaining, first.resultGraph, {
+    ...(saved?.durations ?? {}),
+    ...(first.durations ?? {}),
+  });
+  const combined = combineRunResults(first, second);
+  finishRun(tests, combined, saved);
+  printPartitionDocument({ completedTests: combined.completedTests, partition, phase: 'all' });
+}
 async function watchMode() {
   await baseline();
   if (interruptedSignal) return;
@@ -780,6 +991,8 @@ if (command === 'baseline') {
   await baseline();
 } else if (command === 'affected') {
   await affected(options.positionals[0]);
+} else if (command === 'affected-first') {
+  await affectedFirst(options.positionals[0]);
 } else if (command === 'related') {
   await related(options.positionals);
 } else if (command === 'since-last-run') {
