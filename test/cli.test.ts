@@ -2324,6 +2324,15 @@ test('affected-first remaining phase rejects stale and malformed plans before ru
     assert.equal(stale.status, 1);
     assert.match(stale.stderr, /Partition plan is stale: node changed; rerun the affected phase/);
 
+    document.node = process.versions.node;
+    document.affectedResult.resultGraph['test/value.test.mjs'] = [
+      ['test/value.test.mjs', '../../outside.mjs'],
+    ];
+    writeFileSync(planPath, JSON.stringify(document));
+    const unsafe = run(cwd, 'affected-first', '--phase', 'remaining', '--plan', plan);
+    assert.equal(unsafe.status, 1);
+    assert.match(unsafe.stderr, /Partition plan affected result is invalid/);
+
     writeFileSync(planPath, '{not json');
     const malformed = run(cwd, 'affected-first', '--phase', 'remaining', '--plan', plan);
     assert.equal(malformed.status, 1);

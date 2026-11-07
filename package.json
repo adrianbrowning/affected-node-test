@@ -34,6 +34,7 @@
     "docs:check": "mdcode update --quiet --check README.md",
     "docs:update": "mdcode update --quiet --apply README.md",
     "prepack": "pnpm build",
+    "review:performance": "pnpm build && node scripts/release-benchmark.ts",
     "test": "node --test test/*.test.ts",
     "test:affected": "node bin/affected-node-test.ts affected",
     "test:baseline": "node bin/affected-node-test.ts baseline",

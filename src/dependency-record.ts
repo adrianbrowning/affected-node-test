@@ -3,6 +3,7 @@ import { writeJsonAtomically } from './cache.ts';
 import { repositoryFilesFingerprint } from './project-config.ts';
 import type { DependencyEdge } from './dependency-graph.ts';
 import { isNodeError } from './errors.ts';
+import { isRepositoryPath } from './repository-path.ts';
 
 export type DependencyGraph = Record<string, DependencyEdge[]>;
 export type FileState = { mtimeMs: number; size: number } | null;
@@ -67,19 +68,22 @@ function isValidRecord(value: unknown): value is DependencyRecord {
   }
   const tests = record.tests as unknown[];
   const testSet = new Set(tests);
-  return (record.setupDependencyFiles as unknown[]).every((path) => typeof path === 'string') &&
-    (record.setupFiles as unknown[]).every((path) => typeof path === 'string') &&
-    (record.globalSetupDependencyFiles as unknown[]).every((path) => typeof path === 'string') &&
-    (record.globalSetupFiles as unknown[]).every((path) => typeof path === 'string') &&
-    (record.environmentFiles as unknown[]).every((path) => typeof path === 'string') &&
-    (record.conventionDependencyFiles as unknown[]).every((path) => typeof path === 'string') &&
-    Object.values(record.dependencyStates).every((state) => state && typeof state === 'object' && !Array.isArray(state)) &&
+  return (record.setupDependencyFiles as unknown[]).every(isRepositoryPath) &&
+    (record.setupFiles as unknown[]).every(isRepositoryPath) &&
+    (record.globalSetupDependencyFiles as unknown[]).every(isRepositoryPath) &&
+    (record.globalSetupFiles as unknown[]).every(isRepositoryPath) &&
+    (record.environmentFiles as unknown[]).every(isRepositoryPath) &&
+    (record.conventionDependencyFiles as unknown[]).every(isRepositoryPath) &&
+    Object.entries(record.dependencyStates).every(([test, state]) => testSet.has(test) && state &&
+      typeof state === 'object' && !Array.isArray(state) && Object.keys(state).every(isRepositoryPath)) &&
     Object.values(record.durations).every((duration) => typeof duration === 'number' && Number.isFinite(duration) && duration >= 0) &&
-    (record.failedTests as unknown[]).every((test) => typeof test === 'string') &&
+    Object.keys(record.durations).every((test) => testSet.has(test)) &&
+    Object.keys(record.graph).every((test) => testSet.has(test)) &&
+    (record.failedTests as unknown[]).every(isRepositoryPath) &&
     (record.unresolvedStaticTests as unknown[]).every((test) => typeof test === 'string' && testSet.has(test)) &&
-    tests.every((test) => typeof test === 'string' &&
+    tests.every((test) => isRepositoryPath(test) &&
       Array.isArray((record.graph as Record<string, unknown>)[test]) && ((record.graph as Record<string, unknown[]>)[test]).every((edge) =>
-        Array.isArray(edge) && edge.length === 2 && edge.every((part) => typeof part === 'string')));
+        Array.isArray(edge) && edge.length === 2 && edge.every((path) => path === '' || isRepositoryPath(path))));
 }
 
 function writeDependencyRecord(path: string, record: Omit<DependencyRecord, 'version'> | DependencyRecord) {
