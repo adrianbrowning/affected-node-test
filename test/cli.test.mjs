@@ -649,6 +649,72 @@ test('workspace affected routes Git changes only to their owning project', () =>
   }
 });
 
+test('workspace dry-run preserves project routing, fallbacks, and cache state', () => {
+  const cwd = makeWorkspace();
+  const cache = (project) => join(cwd, 'packages', project, '.affected-tests', 'graph.json');
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+    const cacheBefore = {
+      a: readFileSync(cache('a'), 'utf8'),
+      b: readFileSync(cache('b'), 'utf8'),
+    };
+
+    const noOp = run(cwd, 'since-last-run', '--dry-run');
+    assert.equal(noOp.status, 0, noOp.stderr);
+    assert.match(noOp.stdout, /Project packages\/a/);
+    assert.match(noOp.stdout, /Project packages\/b/);
+    assert.equal((noOp.stdout.match(/No tests changed since last run\./g) ?? []).length, 2);
+
+    writeFileSync(join(cwd, 'packages', 'a', 'src', 'value.mjs'), 'export const value = 1; // changed\n');
+    const affected = run(cwd, 'affected', '--dry-run');
+    assert.equal(affected.status, 0, affected.stderr);
+    assert.match(affected.stdout, /Project packages\/a/);
+    assert.doesNotMatch(affected.stdout, /Project packages\/b/);
+    assert.match(affected.stdout, /Dry run: selected 1\/1 related test file\(s\)\./);
+    assert.match(affected.stdout, /changed dependency: test\/value\.test\.mjs -> src\/value\.mjs/);
+
+    const related = run(cwd, 'related', 'packages/b/src/value.mjs', '--dry-run');
+    assert.equal(related.status, 0, related.stderr);
+    assert.match(related.stdout, /Project packages\/b/);
+    assert.doesNotMatch(related.stdout, /Project packages\/a/);
+    assert.match(related.stdout, /changed dependency: test\/value\.test\.mjs -> src\/value\.mjs/);
+
+    writeFileSync(join(cwd, 'packages', 'b', 'src', 'value.mjs'), 'export const value = 2; // changed\n');
+    const sinceLastRun = run(cwd, 'since-last-run', '--dry-run');
+    assert.equal(sinceLastRun.status, 0, sinceLastRun.stderr);
+    assert.match(sinceLastRun.stdout, /Project packages\/a/);
+    assert.match(sinceLastRun.stdout, /Project packages\/b/);
+    assert.equal((sinceLastRun.stdout.match(/recorded dependency state changed/g) ?? []).length, 2);
+
+    writeFileSync(join(cwd, 'README.md'), 'workspace-level change\n');
+    const fallback = run(cwd, 'affected', '--dry-run');
+    assert.equal(fallback.status, 0, fallback.stderr);
+    assert.match(fallback.stdout, /Workspace-level change README\.md; previewing every project baseline\./);
+    assert.equal((fallback.stdout.match(/Dry run: full suite \(1 test file\(s\)\)\./g) ?? []).length, 2);
+    assert.doesNotMatch(fallback.stdout, /▶/);
+
+    const relatedFallback = run(cwd, 'related', 'README.md', '--dry-run');
+    assert.equal(relatedFallback.status, 0, relatedFallback.stderr);
+    assert.match(relatedFallback.stdout, /Workspace-level related file README\.md; previewing every project baseline\./);
+    assert.equal((relatedFallback.stdout.match(/Dry run: full suite \(1 test file\(s\)\)\./g) ?? []).length, 2);
+
+    assert.equal(readFileSync(cache('a'), 'utf8'), cacheBefore.a);
+    assert.equal(readFileSync(cache('b'), 'utf8'), cacheBefore.b);
+    assert.doesNotMatch(`${affected.stdout}${related.stdout}${sinceLastRun.stdout}`, /▶/);
+
+    rmSync(join(cwd, 'README.md'));
+    rmSync(join(cwd, 'packages', 'a', '.affected-tests'), { recursive: true, force: true });
+    rmSync(join(cwd, 'packages', 'b', '.affected-tests'), { recursive: true, force: true });
+    const cacheMiss = run(cwd, 'affected', '--dry-run');
+    assert.equal(cacheMiss.status, 0, cacheMiss.stderr);
+    assert.equal((cacheMiss.stdout.match(/No graph cache; running full suite\./g) ?? []).length, 2);
+    assert.equal(existsSync(cache('a')), false);
+    assert.equal(existsSync(cache('b')), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('watch emits structured readiness over IPC', { timeout: 30_000 }, async () => {
   const cwd = makeRepository();
   const env = { ...process.env };

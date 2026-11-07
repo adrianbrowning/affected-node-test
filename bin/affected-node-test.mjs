@@ -66,7 +66,7 @@ function parseArguments(values) {
       concurrency = Number(value);
       index += 1;
     } else if (values[index] === '--dry-run') {
-      if (!['affected', 'related', 'since-last-run'].includes(command)) {
+      if (!['baseline', 'affected', 'related', 'since-last-run'].includes(command)) {
         failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
       }
       dryRun = true;
@@ -120,9 +120,6 @@ try {
   projectConfig = loadProjectConfig(root);
 } catch (error) {
   fail(error.message);
-}
-if (projectConfig.projects.length && options.dryRun) {
-  fail('Workspace --dry-run is not supported yet.');
 }
 if (command === 'doctor') {
   try {
@@ -422,17 +419,18 @@ function finishRun(tests, result, previous) {
   console.error('Tests failed; previous dependency graph was left unchanged and failure status was recorded.');
   process.exitCode = 1;
 }
-async function baseline(previous) {
+async function baseline(previous, selection) {
   const tests = discover();
+  if (options.dryRun) {
+    for (const line of renderSelectionPreview({ allTests: tests, selection })) console.log(line);
+    return;
+  }
   console.log(`Building graph from ${tests.length} test file(s)`);
   finishRun(tests, await runTests(tests, {}, previous?.durations));
 }
 async function executeSelectionOutcome(tests, prepare) {
   await executeSelectionRun({
-    baseline: async (saved, selection) => {
-      if (!options.dryRun) return baseline(saved);
-      for (const line of renderSelectionPreview({ allTests: tests, selection })) console.log(line);
-    },
+    baseline,
     execute: async (selectedTests, saved, selection, details) => {
       if (options.dryRun) {
         for (const line of renderSelectionPreview({

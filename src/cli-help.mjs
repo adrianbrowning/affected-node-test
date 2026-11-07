@@ -6,9 +6,10 @@ const concurrency = `Options:
 const commandHelpText = {
   baseline: `Build the complete dependency graph by running every discovered test file.
 
-Usage: affected-node-test baseline [--concurrency N]
+Usage: affected-node-test baseline [--concurrency N] [--dry-run]
 
 ${concurrency}
+  --dry-run        Show the full suite without running tests or updating the cache.
 
 Example:
   affected-node-test baseline --concurrency 4`,

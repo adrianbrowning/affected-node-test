@@ -53,11 +53,11 @@ Acceptance criteria:
 
 ## DX-4: explain and preview selection
 
-Status: in progress.
+Status: complete.
 
 - [x] Add structured selection and fallback reasons without changing execution output.
 - [x] Add read-only preview to finite single-project commands.
-- [ ] Add workspace preview parity.
+- [x] Add workspace preview parity.
 
 User story: a user can see what would run and why without running tests or changing the cache.
 

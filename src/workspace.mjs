@@ -7,18 +7,24 @@ import { watchReadyMessageType } from './watch-protocol.mjs';
 
 const normal = (path) => path.split(sep).join('/');
 
-function splitConcurrencyArgs(args) {
+function splitCommandArgs(args) {
   const positionals = [];
   const forwardedOptions = [];
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '--concurrency') {
       forwardedOptions.push(args[index], args[index + 1]);
       index += 1;
+    } else if (args[index] === '--dry-run') {
+      forwardedOptions.push(args[index]);
     } else {
       positionals.push(args[index]);
     }
   }
   return { forwardedOptions, positionals };
+}
+
+function baselineVerb(options) {
+  return options.includes('--dry-run') ? 'previewing' : 'running';
 }
 
 function ownerOf(projects, workspacePath) {
@@ -152,14 +158,14 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
   const resolvedProjects = resolveWorkspaceProjects({ root, projects });
 
   if (command === 'watch') {
-    const { forwardedOptions, positionals } = splitConcurrencyArgs(args);
+    const { forwardedOptions, positionals } = splitCommandArgs(args);
     if (positionals.length) throw new Error(`Unexpected argument: ${positionals[0]}`);
     return runWorkspaceWatch({ projects: resolvedProjects, args: forwardedOptions, cliPath });
   }
 
   let projectRuns = resolvedProjects.map((project) => ({ project, command, args }));
   if (command === 'related') {
-    const { forwardedOptions, positionals: files } = splitConcurrencyArgs(args);
+    const { forwardedOptions, positionals: files } = splitCommandArgs(args);
     if (!files.length) throw new Error('Usage: affected-node-test related <file...> [--concurrency N]');
 
     const groupedFiles = new Map(resolvedProjects.map((project) => [project.path, []]));
@@ -180,7 +186,7 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
     }
 
     if (workspaceLevelFile) {
-      console.log(`Workspace-level related file ${workspaceLevelFile}; running every project baseline.`);
+      console.log(`Workspace-level related file ${workspaceLevelFile}; ${baselineVerb(forwardedOptions)} every project baseline.`);
       projectRuns = resolvedProjects.map((project) => ({
         project,
         command: 'baseline',
@@ -199,7 +205,7 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
 
   let printNoChangedFiles = false;
   if (command === 'affected') {
-    const { forwardedOptions, positionals } = splitConcurrencyArgs(args);
+    const { forwardedOptions, positionals } = splitCommandArgs(args);
     if (positionals.length > 1) {
       throw new Error('Usage: affected-node-test affected [git-ref] [--concurrency N]');
     }
@@ -215,7 +221,7 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
       root,
     });
     if (changed.noMergeBase) {
-      console.log(`No merge base with ${ref}; running every project baseline.`);
+      console.log(`No merge base with ${ref}; ${baselineVerb(forwardedOptions)} every project baseline.`);
       projectRuns = resolvedProjects.map((project) => ({ project, command: 'baseline', args: forwardedOptions }));
     } else {
       const changes = changed.files;
@@ -228,7 +234,7 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
         return false;
       });
       if (workspaceLevelChange) {
-        console.log(`Workspace-level change ${workspaceLevelChange}; running every project baseline.`);
+        console.log(`Workspace-level change ${workspaceLevelChange}; ${baselineVerb(forwardedOptions)} every project baseline.`);
         projectRuns = resolvedProjects.map((project) => ({ project, command: 'baseline', args: forwardedOptions }));
       } else {
         projectRuns = resolvedProjects.map((project) => groupedFiles.get(project.path).length
