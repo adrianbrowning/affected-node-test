@@ -7,11 +7,13 @@ An Acorn-backed affected-test selector for Node's native `node:test`, combining 
 ```sh file=docs/examples/commands.sh
 node bin/affected-node-test.mjs baseline --concurrency 4
 node bin/affected-node-test.mjs affected origin/main --concurrency 4
+node bin/affected-node-test.mjs related src/math.mjs --concurrency 4
 node bin/affected-node-test.mjs since-last-run --concurrency 4
 ```
 
 - `baseline` runs all discovered test files, merges literal static-import edges with observed runtime module-resolution edges, and writes `.affected-tests/graph.json` after a passing suite.
 - `affected REF` compares against the merge base of `REF` and `HEAD`, includes working-tree changes and untracked files, and runs tests whose captured dependency trees contain changed files.
+- `related FILE...` requires no Git repository and runs tests related to explicit repository-relative or absolute paths. It shares the same conservative triggers and mappings as `affected`.
 - `since-last-run` requires no Git repository. It compares each test's recorded dependency metadata with the filesystem, reruns changed, unrecorded, and previously failing tests, and updates successful records incrementally.
 - The graph cache is tied to the exact Node version, `NODE_OPTIONS`, package manifests, lockfiles, npm configuration, Node version files, and TypeScript configuration files.
 - Per-test dependency state records include modification time and size. Missing or changed dependencies select that test; project-wide fingerprints remain the conservative outer safety layer.

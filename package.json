@@ -12,8 +12,8 @@
   },
   "scripts": {
     "check:full": "pnpm docs:check && pnpm test",
-    "docs:check": "mdcode update --quiet --stdout README.md | diff - README.md",
-    "docs:update": "mdcode update --quiet README.md",
+    "docs:check": "mdcode update --quiet --check README.md",
+    "docs:update": "mdcode update --quiet --apply README.md",
     "test": "node --test test/*.test.mjs",
     "test:unit": "node --test test/*.test.mjs"
   },

@@ -56,7 +56,7 @@ function makeRepository({ withOtherTest = false } = {}) {
   return cwd;
 }
 
-function makeNonGitRepository() {
+function makeNonGitRepository({ withOtherTest = false } = {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-nongit-'));
   mkdirSync(join(cwd, 'src'));
   mkdirSync(join(cwd, 'test'));
@@ -69,6 +69,16 @@ function makeNonGitRepository() {
     "test('value', () => assert.equal(value, 1));",
     '',
   ].join('\n'));
+  if (withOtherTest) {
+    writeFileSync(join(cwd, 'src', 'other.mjs'), 'export const other = 2;\n');
+    writeFileSync(join(cwd, 'test', 'other.test.mjs'), [
+      "import test from 'node:test';",
+      "import assert from 'node:assert/strict';",
+      "import { other } from '../src/other.mjs';",
+      "test('other', () => assert.equal(other, 2));",
+      '',
+    ].join('\n'));
+  }
   return cwd;
 }
 
@@ -913,6 +923,22 @@ test('an unresolved computed import conservatively selects its owning test', () 
     assert.match(affected.stdout, /Selected 2\/2 test file\(s\)/);
     assert.match(affected.stdout, /▶ test\/other\.test\.mjs/);
     assert.match(affected.stdout, /▶ test\/value\.test\.mjs/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('related selects tests for explicit files without Git', () => {
+  const cwd = makeNonGitRepository({ withOtherTest: true });
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+    const related = run(cwd, 'related', 'src/value.mjs');
+
+    assert.equal(related.status, 0, related.stderr);
+    assert.match(related.stdout, /Related files: src\/value\.mjs/);
+    assert.match(related.stdout, /Selected 1\/2 related test file\(s\)/);
+    assert.match(related.stdout, /▶ test\/value\.test\.mjs/);
+    assert.doesNotMatch(related.stdout, /▶ test\/other\.test\.mjs/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

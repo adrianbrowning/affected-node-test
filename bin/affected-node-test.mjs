@@ -21,7 +21,7 @@ const root = process.cwd();
 const hook = fileURLToPath(new URL('../src/hook.mjs', import.meta.url));
 const cachePath = join(root, '.affected-tests', 'graph.json');
 const [command = 'help', ...args] = process.argv.slice(2);
-const usage = 'Usage:\n  affected-node-test baseline [--concurrency N]\n  affected-node-test affected <git-ref> [--concurrency N]\n  affected-node-test since-last-run [--concurrency N]';
+const usage = 'Usage:\n  affected-node-test baseline [--concurrency N]\n  affected-node-test affected <git-ref> [--concurrency N]\n  affected-node-test related <file...> [--concurrency N]\n  affected-node-test since-last-run [--concurrency N]';
 const fail = (message) => { console.error(message); process.exit(1); };
 if (command === 'help' || command === '--help' || command === '-h') {
   console.log(usage);
@@ -483,6 +483,74 @@ async function sinceLastRun() {
   console.log(`Selected ${selectedTests.length}/${tests.length} test file(s) since last run`);
   finishRun(tests, await runTests(selectedTests, saved.graph), saved);
 }
+function selectForFiles(tests, saved, files) {
+  const forcedChange = files.find((path) => matchesPatterns(path, projectConfig.forceRerunTriggers));
+  if (forcedChange) return { fullRunMessage: `Force-rerun trigger matched: ${forcedChange}; running full suite.` };
+  if (files.some((path) => /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|node_modules\/|tsconfig[^/]*\.json|\.npmrc|\.node-version|\.nvmrc)$/.test(path))) {
+    return { fullRunMessage: 'Project configuration changed; running full suite.' };
+  }
+  const selected = new Set(saved.failedTests);
+  const known = new Set(tests);
+  for (const test of tests) for (const [parent, child] of saved.graph[test] ?? []) {
+    known.add(parent);
+    known.add(child);
+  }
+  const jsChange = (path) => /\.[cm]?js$/.test(path);
+  const unknownCode = files.filter((path) => jsChange(path) && !known.has(path));
+  if (unknownCode.length) {
+    return { fullRunMessage: `Unknown JS file changed (${unknownCode.join(', ')}); running full suite.` };
+  }
+  if (files.some(jsChange)) {
+    for (const test of saved.unresolvedStaticTests) selected.add(test);
+  }
+  const messages = [];
+  const watchTriggeredChanges = new Set();
+  const watchTriggeredTests = new Set();
+  for (const mapping of projectConfig.watchTriggerPatterns) {
+    for (const file of files) {
+      if (!matchesPatterns(file, [mapping.pattern])) continue;
+      watchTriggeredChanges.add(file);
+      const mappedTests = tests.filter((test) => matchesPatterns(test, mapping.tests));
+      if (!mappedTests.length) {
+        return { fullRunMessage: `Watch trigger matched ${file} but selected no tests; running full suite.` };
+      }
+      for (const test of mappedTests) {
+        selected.add(test);
+        watchTriggeredTests.add(test);
+      }
+    }
+  }
+  if (watchTriggeredChanges.size) {
+    messages.push(`Watch trigger matched ${[...watchTriggeredChanges].join(', ')}; selected ${watchTriggeredTests.size} mapped test file(s).`);
+  }
+  for (const test of tests) {
+    if (files.some((file) => dependencies(saved.graph[test] ?? [], test).has(file))) selected.add(test);
+  }
+  return { messages, selected };
+}
+async function related(files) {
+  if (!files.length) fail('Usage: affected-node-test related <file...> [--concurrency N]');
+  const repositoryFiles = [...new Set(files.map((file) => {
+    const path = relative(root, resolve(root, file));
+    if (path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path)) {
+      fail(`Related file is outside the project root: ${file}`);
+    }
+    return normal(path);
+  }))].sort();
+  const tests = discover();
+  const saved = loadUsableCache(tests);
+  if (!saved) return baseline();
+  const selection = selectForFiles(tests, saved, repositoryFiles);
+  if (selection.fullRunMessage) {
+    console.log(selection.fullRunMessage); return baseline();
+  }
+  for (const message of selection.messages) console.log(message);
+  console.log(`Related files: ${repositoryFiles.join(', ')}`);
+  if (!selection.selected.size) { console.log('No related tests found.'); return; }
+  const selectedTests = [...selection.selected].sort();
+  console.log(`Selected ${selectedTests.length}/${tests.length} related test file(s)`);
+  finishRun(tests, await runTests(selectedTests, saved.graph), saved);
+}
 async function affected(ref) {
   if (!ref) fail('Usage: affected-node-test affected <git-ref>');
   const tests = discover();
@@ -493,52 +561,15 @@ async function affected(ref) {
     console.log(`No merge base with ${ref}; running full suite.`); return baseline();
   }
   if (!changes.length && !saved.failedTests.length) { console.log('No changed files.'); return; }
-  const forcedChange = changes.find((path) => matchesPatterns(path, projectConfig.forceRerunTriggers));
-  if (forcedChange) {
-    console.log(`Force-rerun trigger matched: ${forcedChange}; running full suite.`); return baseline();
+  const selection = selectForFiles(tests, saved, changes);
+  if (selection.fullRunMessage) {
+    console.log(selection.fullRunMessage); return baseline();
   }
-  // Avoid guessing if dependencies, module resolution, or tooling could have changed.
-  if (changes.some((p) => /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|node_modules\/|tsconfig[^/]*\.json|\.npmrc|\.node-version|\.nvmrc)$/.test(p) || p.startsWith('.affected-tests/'))) {
-    console.log('Project configuration changed; running full suite.'); return baseline();
-  }
-  const selected = new Set(saved.failedTests);
-  const known = new Set(tests);
-  for (const test of tests) for (const [p, c] of saved.graph[test] ?? []) { known.add(p); known.add(c); }
-  const jsChange = (p) => /\.[cm]?js$/.test(p);
-  // Unknown code files could be new dependencies imported dynamically: do not skip tests.
-  const unknownCode = changes.filter((p) => jsChange(p) && !known.has(p));
-  if (unknownCode.length) {
-    console.log(`Unknown JS file changed (${unknownCode.join(', ')}); running full suite.`); return baseline();
-  }
-  if (changes.some(jsChange)) {
-    for (const test of saved.unresolvedStaticTests) selected.add(test);
-  }
-  const watchTriggeredChanges = new Set();
-  const watchTriggeredTests = new Set();
-  for (const mapping of projectConfig.watchTriggerPatterns) {
-    for (const change of changes) {
-      if (!matchesPatterns(change, [mapping.pattern])) continue;
-      watchTriggeredChanges.add(change);
-      const mappedTests = tests.filter((test) => matchesPatterns(test, mapping.tests));
-      if (!mappedTests.length) {
-        console.log(`Watch trigger matched ${change} but selected no tests; running full suite.`); return baseline();
-      }
-      for (const test of mappedTests) {
-        selected.add(test);
-        watchTriggeredTests.add(test);
-      }
-    }
-  }
-  if (watchTriggeredChanges.size) {
-    console.log(`Watch trigger matched ${[...watchTriggeredChanges].join(', ')}; selected ${watchTriggeredTests.size} mapped test file(s).`);
-  }
-  for (const test of tests) {
-    if (changes.some((file) => dependencies(saved.graph[test] ?? [], test).has(file))) selected.add(test);
-  }
+  for (const message of selection.messages) console.log(message);
   if (changes.length) console.log(`Changed files: ${changes.join(', ')}`);
   else console.log(`No changed files; rerunning ${saved.failedTests.length} previously failing test file(s).`);
-  if (!selected.size) { console.log('No affected tests found.'); return; }
-  const selectedTests = [...selected].sort();
+  if (!selection.selected.size) { console.log('No affected tests found.'); return; }
+  const selectedTests = [...selection.selected].sort();
   console.log(`Selected ${selectedTests.length}/${tests.length} test file(s)`);
   finishRun(tests, await runTests(selectedTests, saved.graph), saved);
 }
@@ -548,6 +579,8 @@ if (command === 'baseline') {
 } else if (command === 'affected') {
   if (options.positionals.length !== 1) fail('Usage: affected-node-test affected <git-ref> [--concurrency N]');
   await affected(options.positionals[0]);
+} else if (command === 'related') {
+  await related(options.positionals);
 } else if (command === 'since-last-run') {
   if (options.positionals.length) fail(`Unexpected argument: ${options.positionals[0]}`);
   await sinceLastRun();
