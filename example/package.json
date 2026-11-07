@@ -1,0 +1,1 @@
+{"private":true,"type":"module","scripts":{"test:baseline":"node ../bin/affected-node-test.mjs baseline","test:affected":"node ../bin/affected-node-test.mjs affected HEAD"}}

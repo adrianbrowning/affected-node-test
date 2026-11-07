@@ -1,0 +1,26 @@
+{
+  "name": "node-affected-tests-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.14.0",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "bin": {
+    "affected-node-test": "./bin/affected-node-test.mjs"
+  },
+  "scripts": {
+    "check:full": "pnpm docs:check && pnpm test",
+    "docs:check": "mdcode update --quiet --stdout README.md | diff - README.md",
+    "docs:update": "mdcode update --quiet README.md",
+    "test": "node --test test/*.test.mjs",
+    "test:unit": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "acorn": "8.19.0"
+  },
+  "devDependencies": {
+    "mdcode-ts": "0.1.0"
+  }
+}

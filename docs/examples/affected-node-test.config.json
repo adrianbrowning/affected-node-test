@@ -1,0 +1,15 @@
+{
+  "include": ["test/**/*.test.mjs"],
+  "exclude": ["test/fixtures/**"],
+  "envFiles": [".env", ".env.test"],
+  "forceRerunTriggers": ["config/**"],
+  "globalSetupFiles": ["test/global-setup.mjs"],
+  "projectDependencies": ["test/setup.mjs", ".env*", "snapshots/**"],
+  "setupFiles": ["test/setup.mjs"],
+  "watchTriggerPatterns": [
+    {
+      "pattern": "fixtures/templates/**",
+      "tests": ["test/render*.test.mjs"]
+    }
+  ]
+}
