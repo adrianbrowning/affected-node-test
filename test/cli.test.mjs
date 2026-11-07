@@ -110,6 +110,11 @@ function makeWorkspace() {
   writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({
     projects: ['packages/a', 'packages/b'],
   }));
+  git(cwd, 'init', '-q');
+  git(cwd, 'config', 'user.email', 'tests@example.invalid');
+  git(cwd, 'config', 'user.name', 'Tests');
+  git(cwd, 'add', '.');
+  git(cwd, 'commit', '-qm', 'initial');
   return cwd;
 }
 
@@ -384,6 +389,23 @@ test('workspace related routes files only to their owning project', () => {
     assert.doesNotMatch(related.stdout, /Project packages\/b/);
     assert.match(related.stdout, /Related files: src\/value\.mjs/);
     assert.match(related.stdout, /Selected 1\/1 related test file\(s\)/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('workspace affected routes Git changes only to their owning project', () => {
+  const cwd = makeWorkspace();
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+    writeFileSync(join(cwd, 'packages', 'a', 'src', 'value.mjs'), 'export const value = 1; // changed\n');
+
+    const affected = run(cwd, 'affected');
+    assert.equal(affected.status, 0, affected.stderr);
+    assert.match(affected.stdout, /Changed files: packages\/a\/src\/value\.mjs/);
+    assert.match(affected.stdout, /Project packages\/a/);
+    assert.doesNotMatch(affected.stdout, /Project packages\/b/);
+    assert.match(affected.stdout, /Selected 1\/1 related test file\(s\)/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
