@@ -73,6 +73,7 @@ export function loadProjectConfig(root) {
         forceRerunTriggers: [],
         globalSetupFiles: [],
         projectDependencies: [],
+        projects: [],
         setupFiles: [],
         watchTriggerPatterns: [],
       };
@@ -96,11 +97,20 @@ export function loadProjectConfig(root) {
     'forceRerunTriggers',
     'globalSetupFiles',
     'projectDependencies',
+    'projects',
     'setupFiles',
     'watchTriggerPatterns',
   ]);
   const unknownKey = Object.keys(config).find((key) => !knownKeys.has(key));
   if (unknownKey) throw new Error(`${configFileName}: unknown option ${unknownKey}.`);
+  const projects = stringArray(config, 'projects');
+  const projectOptions = [...knownKeys].filter((key) => key !== 'projects');
+  if (projects.length) {
+    const mixedOption = projectOptions.find((key) => Object.hasOwn(config, key));
+    if (mixedOption) {
+      throw new Error(`${configFileName}: workspace option projects cannot be combined with ${mixedOption}.`);
+    }
+  }
   return {
     cacheDir: nonEmptyString(config, 'cacheDir', '.affected-tests'),
     include: stringArray(config, 'include'),
@@ -109,6 +119,7 @@ export function loadProjectConfig(root) {
     forceRerunTriggers: stringArray(config, 'forceRerunTriggers'),
     globalSetupFiles: stringArray(config, 'globalSetupFiles'),
     projectDependencies: stringArray(config, 'projectDependencies'),
+    projects,
     setupFiles: stringArray(config, 'setupFiles'),
     watchTriggerPatterns: watchTriggerPatterns(config),
   };

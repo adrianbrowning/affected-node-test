@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { writeJsonAtomically } from '../src/cache.mjs';
 import { configurationFingerprint } from '../src/config.mjs';
 import { buildStaticGraph } from '../src/static-graph.mjs';
+import { runWorkspace } from '../src/workspace.mjs';
 import {
   conventionDependencyPatterns,
   loadProjectConfig,
@@ -88,6 +89,19 @@ try {
   projectConfig = loadProjectConfig(root);
 } catch (error) {
   fail(error.message);
+}
+if (projectConfig.projects.length) {
+  try {
+    process.exit(runWorkspace({
+      root,
+      projects: projectConfig.projects,
+      command,
+      args,
+      cliPath: fileURLToPath(import.meta.url),
+    }));
+  } catch (error) {
+    fail(error.message);
+  }
 }
 const cacheDirectory = resolve(root, projectConfig.cacheDir);
 const cacheDirectoryFromRoot = relative(root, cacheDirectory);

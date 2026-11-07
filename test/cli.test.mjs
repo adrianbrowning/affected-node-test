@@ -91,6 +91,28 @@ function makeNonGitRepository({ withOtherTest = false } = {}) {
   return cwd;
 }
 
+function makeWorkspace() {
+  const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-workspace-'));
+  for (const [name, value] of [['a', 1], ['b', 2]]) {
+    const project = join(cwd, 'packages', name);
+    mkdirSync(join(project, 'src'), { recursive: true });
+    mkdirSync(join(project, 'test'));
+    writeFileSync(join(project, 'package.json'), '{"type":"module"}\n');
+    writeFileSync(join(project, 'src', 'value.mjs'), `export const value = ${value};\n`);
+    writeFileSync(join(project, 'test', 'value.test.mjs'), [
+      "import test from 'node:test';",
+      "import assert from 'node:assert/strict';",
+      "import { value } from '../src/value.mjs';",
+      `test('${name}', () => assert.equal(value, ${value}));`,
+      '',
+    ].join('\n'));
+  }
+  writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({
+    projects: ['packages/a', 'packages/b'],
+  }));
+  return cwd;
+}
+
 function makeCommonJsRepository() {
   const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-cjs-'));
   mkdirSync(join(cwd, 'src'));
@@ -325,6 +347,27 @@ test('a configured cache directory cannot escape the project root', () => {
     const baseline = run(cwd, 'baseline');
     assert.equal(baseline.status, 1);
     assert.match(baseline.stderr, /cacheDir must stay within the project root/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('workspace baseline runs configured projects with isolated caches', () => {
+  const cwd = makeWorkspace();
+  try {
+    const baseline = run(cwd, 'baseline', '--concurrency', '1');
+    assert.equal(baseline.status, 0, baseline.stderr);
+    assert.match(baseline.stdout, /Project packages\/a/);
+    assert.match(baseline.stdout, /Project packages\/b/);
+    assert.ok(baseline.stdout.indexOf('Project packages/a') < baseline.stdout.indexOf('Project packages/b'));
+    assert.equal(existsSync(join(cwd, 'packages', 'a', '.affected-tests', 'graph.json')), true);
+    assert.equal(existsSync(join(cwd, 'packages', 'b', '.affected-tests', 'graph.json')), true);
+    assert.equal(existsSync(join(cwd, '.affected-tests', 'graph.json')), false);
+
+    const cleared = run(cwd, 'clear-cache');
+    assert.equal(cleared.status, 0, cleared.stderr);
+    assert.equal(existsSync(join(cwd, 'packages', 'a', '.affected-tests', 'graph.json')), false);
+    assert.equal(existsSync(join(cwd, 'packages', 'b', '.affected-tests', 'graph.json')), false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -93,6 +93,18 @@ An optional `affected-node-test.config.json` at the repository root controls cac
 - Custom runner and serializer dependencies have no universal native-runner filename convention; declare them through `projectDependencies`.
 - The root configuration is non-executable JSON. Add any referenced configuration fragments to `projectDependencies` so their contents are tracked.
 
+### Workspaces
+
+A workspace root can delegate to isolated project roots instead of defining single-project options:
+
+```json file=docs/examples/workspace-config.json
+{
+  "projects": ["packages/api", "packages/web"]
+}
+```
+
+Project roots are validated, deduplicated, rejected when overlapping, and run in lexical order. Each project owns its discovery, configuration, dependency graph, and cache. Workspace `baseline`, `since-last-run`, and `clear-cache` are supported in this first multi-project slice; affected-file routing and coordinated watch mode remain on the production roadmap. The workspace `projects` option cannot be mixed with single-project options in the same configuration file.
+
 ## Deliberate prototype limitations
 
 - This is a **proof of concept**, not yet a production-safe drop-in. Literal ESM imports, re-exports, dynamic imports, and CommonJS `require()` calls are parsed statically; executed runtime imports are merged into the same graph.
