@@ -16,7 +16,7 @@ export async function executeSelectionRun({
   }
   await executeSelection({
     ...prepare(record),
-    baseline,
+    baseline: () => baseline(record),
     execute: (selectedTests) => execute(selectedTests, record),
     log,
     totalTests,

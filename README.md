@@ -24,7 +24,7 @@ node bin/affected-node-test.mjs clear-cache
 - Per-test dependency state records include modification time and size. Missing or changed dependencies select that test; project-wide fingerprints remain the conservative outer safety layer.
 - Missing/stale cache, missing merge bases, removed tests, unknown non-test JS files, and key configuration changes cause a full run. Newly discovered tests run incrementally and extend the existing record.
 - A failed run preserves the previous dependency graph, records the failing test files, and keeps selecting them until they pass.
-- Test files run in a bounded worker pool. `--concurrency N` sets its size; the default is the smaller of four and the runtime's available parallelism.
+- Test files run in a bounded worker pool. `--concurrency N` sets its size; the default is the smaller of four and the runtime's available parallelism. Successful durations are cached so historically slower tests start first, while buffered reporting remains deterministic.
 - `SIGINT` and `SIGTERM` stop active test processes, clean temporary edge logs, preserve the previous cache, and use conventional exit codes.
 - Watch events are debounced, cache/build/dependency directories are ignored, and changes arriving during a run are queued for the next serialized rerun.
 

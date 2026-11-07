@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { writeJsonAtomically } from './cache.mjs';
 import { repositoryFilesFingerprint } from './project-config.mjs';
 
-const recordVersion = 10;
+const recordVersion = 11;
 
 function isValidRecord(record) {
   if (!record || typeof record !== 'object' || Array.isArray(record) ||
@@ -15,6 +15,7 @@ function isValidRecord(record) {
       !Array.isArray(record.environmentFiles) || typeof record.environment !== 'string' ||
       !Array.isArray(record.conventionDependencyFiles) || typeof record.conventionDependencies !== 'string' ||
       !record.dependencyStates || typeof record.dependencyStates !== 'object' || Array.isArray(record.dependencyStates) ||
+      !record.durations || typeof record.durations !== 'object' || Array.isArray(record.durations) ||
       !Array.isArray(record.failedTests) ||
       !Array.isArray(record.unresolvedStaticTests) ||
       !record.graph || typeof record.graph !== 'object' || Array.isArray(record.graph)) {
@@ -28,6 +29,7 @@ function isValidRecord(record) {
     record.environmentFiles.every((path) => typeof path === 'string') &&
     record.conventionDependencyFiles.every((path) => typeof path === 'string') &&
     Object.values(record.dependencyStates).every((state) => state && typeof state === 'object' && !Array.isArray(state)) &&
+    Object.values(record.durations).every((duration) => Number.isFinite(duration) && duration >= 0) &&
     record.failedTests.every((test) => typeof test === 'string') &&
     record.unresolvedStaticTests.every((test) => typeof test === 'string' && testSet.has(test)) &&
     record.tests.every((test) => typeof test === 'string' &&
@@ -51,19 +53,26 @@ export function applyDependencyRun(path, {
     failedTests,
     interrupted,
     resultGraph,
+    durations: resultDurations = {},
     unresolvedStaticTests = [],
   } = result;
   if (interrupted) return { signal: interrupted, status: 'interrupted' };
 
   if (!failedTests.length) {
     const dependencyStates = { ...(previous?.dependencyStates ?? {}) };
+    const durations = { ...(previous?.durations ?? {}) };
     const unresolved = new Set(previous?.unresolvedStaticTests ?? []);
-    for (const test of completedTests) dependencyStates[test] = dependencyStateForTest(resultGraph, test);
+    for (const test of completedTests) {
+      dependencyStates[test] = dependencyStateForTest(resultGraph, test);
+      const duration = resultDurations[test];
+      if (Number.isFinite(duration) && duration >= 0) durations[test] = duration;
+    }
     for (const test of completedTests) unresolved.delete(test);
     for (const test of unresolvedStaticTests) unresolved.add(test);
     writeDependencyRecord(path, {
       ...metadataForGraph(resultGraph),
       dependencyStates,
+      durations,
       failedTests: [],
       graph: resultGraph,
       tests,

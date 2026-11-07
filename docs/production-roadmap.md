@@ -82,7 +82,7 @@ These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior 
 ## P2: efficiency and ergonomics
 
 - [x] Run only new or unrecorded tests when inventory grows
-- [ ] Store durations and schedule historically slow tests first
+- [x] Store durations and schedule historically slow tests first
 - [ ] Consider percentage concurrency and `last-failed`
 - [ ] Consider optional workspace project filtering
 - [ ] Spill large buffered child output to temporary files

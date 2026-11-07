@@ -169,7 +169,7 @@ function makeTypeScriptRepository() {
   return cwd;
 }
 
-function makeParallelRepository() {
+function makeParallelRepository({ delays = { a: 500, b: 500, c: 500 } } = {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-parallel-'));
   mkdirSync(join(cwd, 'test'));
   writeFileSync(join(cwd, 'package.json'), '{"type":"module"}\n');
@@ -178,7 +178,7 @@ function makeParallelRepository() {
       "import { appendFileSync } from 'node:fs';",
       "import test from 'node:test';",
       `appendFileSync(process.env.TEST_TRACKER, 'start:${name}\\n');`,
-      'await new Promise((resolve) => setTimeout(resolve, 500));',
+      `await new Promise((resolve) => setTimeout(resolve, ${delays[name]}));`,
       `appendFileSync(process.env.TEST_TRACKER, 'end:${name}\\n');`,
       `test('${name}', () => {});`,
       '',
@@ -808,6 +808,36 @@ test('--concurrency bounds parallel execution and preserves output order', () =>
     const b = baseline.stdout.indexOf('▶ test/b.test.mjs');
     const c = baseline.stdout.indexOf('▶ test/c.test.mjs');
     assert.ok(a !== -1 && a < b && b < c, baseline.stdout);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('historically slow tests start first while reporting remains deterministic', () => {
+  const cwd = makeParallelRepository({ delays: { a: 50, b: 500, c: 250 } });
+  const tracker = join(cwd, 'processes.log');
+  try {
+    const baseline = runWithEnv(cwd, { TEST_TRACKER: tracker }, 'baseline', '--concurrency', '1');
+    assert.equal(baseline.status, 0, baseline.stderr);
+    const record = JSON.parse(readFileSync(join(cwd, '.affected-tests', 'graph.json'), 'utf8'));
+    assert.ok(record.durations['test/b.test.mjs'] > record.durations['test/c.test.mjs']);
+    assert.ok(record.durations['test/c.test.mjs'] > record.durations['test/a.test.mjs']);
+
+    writeFileSync(tracker, '');
+    for (const name of ['a', 'b', 'c']) {
+      const path = join(cwd, 'test', `${name}.test.mjs`);
+      writeFileSync(path, `${readFileSync(path, 'utf8')}\n// changed\n`);
+    }
+    const affected = runWithEnv(cwd, { TEST_TRACKER: tracker }, 'affected', '--concurrency', '1');
+    assert.equal(affected.status, 0, affected.stderr);
+    const starts = readFileSync(tracker, 'utf8').trim().split('\n')
+      .filter((event) => event.startsWith('start:'));
+    assert.deepEqual(starts, ['start:b', 'start:c', 'start:a']);
+
+    const a = affected.stdout.indexOf('▶ test/a.test.mjs');
+    const b = affected.stdout.indexOf('▶ test/b.test.mjs');
+    const c = affected.stdout.indexOf('▶ test/c.test.mjs');
+    assert.ok(a !== -1 && a < b && b < c, affected.stdout);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

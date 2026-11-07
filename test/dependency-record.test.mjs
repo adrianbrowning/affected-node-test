@@ -28,6 +28,7 @@ test('dependency record module owns persistence and compatibility decisions', ()
     conventionDependencies: filesFingerprint,
     conventionDependencyFiles: [],
     dependencyStates: {},
+    durations: { 'test/a.test.mjs': 12 },
     environment: filesFingerprint,
     environmentFiles: [],
     failedTests: [],
@@ -48,9 +49,9 @@ test('dependency record module owns persistence and compatibility decisions', ()
       reason: 'No graph cache; running full suite.',
     });
 
-    writeFileSync(path, JSON.stringify({ ...record, version: 10 }));
+    writeFileSync(path, JSON.stringify({ ...record, version: 11 }));
     const loaded = loadDependencyRecord(path, current);
-    assert.equal(loaded.record.version, 10);
+    assert.equal(loaded.record.version, 11);
     assert.deepEqual(loaded.record.graph, record.graph);
 
     assert.deepEqual(loadDependencyRecord(path, {
@@ -97,6 +98,7 @@ test('dependency record module owns successful, failed, and interrupted run upda
   });
   const passingResult = {
     completedTests: current.tests,
+    durations: { 'test/a.test.mjs': 12 },
     failedTests: [],
     resultGraph: { 'test/a.test.mjs': [['test/a.test.mjs', 'src/a.mjs']] },
     unresolvedStaticTests: ['test/a.test.mjs'],
@@ -109,6 +111,7 @@ test('dependency record module owns successful, failed, and interrupted run upda
       tests: current.tests,
     }), { status: 'passed' });
     const initial = loadDependencyRecord(path, current).record;
+    assert.deepEqual(initial.durations, passingResult.durations);
     assert.deepEqual(initial.failedTests, []);
     assert.deepEqual(initial.unresolvedStaticTests, current.tests);
 

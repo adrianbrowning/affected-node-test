@@ -5,6 +5,7 @@ import { registerHooks } from 'node:module';
 import { resolve, relative, join, sep, isAbsolute } from 'node:path';
 import { availableParallelism, tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { performance } from 'node:perf_hooks';
 import { configurationFingerprint } from '../src/config.mjs';
 import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.mjs';
 import { dependenciesForTest } from '../src/dependency-graph.mjs';
@@ -175,6 +176,7 @@ function graphForTest(test) {
   const folder = mkdtempSync(join(tmpdir(), 'affected-test-'));
   const log = join(folder, 'edges.jsonl');
   return new Promise((resolveResult) => {
+    const startedAt = performance.now();
     const imports = [hook, ...[...setupFiles].map((file) => join(root, file))]
       .flatMap((file) => ['--import', file]);
     const child = spawn(process.execPath,
@@ -204,6 +206,7 @@ function graphForTest(test) {
         edges.push(...staticGraph.edges);
         const uniqueEdges = [...new Map(edges.map((edge) => [JSON.stringify(edge), edge])).values()];
         resolveResult({
+          durationMs: performance.now() - startedAt,
           edges: uniqueEdges,
           status: code === 0 ? 0 : 1,
           stdout,
@@ -224,7 +227,7 @@ function lifecycleFailure(tests, resultGraph) {
     interrupted: interruptedSignal,
   };
 }
-async function runTests(tests, oldGraph = {}) {
+async function runTests(tests, oldGraph = {}, historicalDurations = {}) {
   const resultGraph = { ...oldGraph };
   const teardowns = [];
   if (tests.length) {
@@ -261,29 +264,33 @@ async function runTests(tests, oldGraph = {}) {
       recordGlobalSetupEdges = false;
     }
   }
-  const results = new Array(tests.length);
+  const scheduledTests = [...tests].sort((left, right) =>
+    (historicalDurations[right] ?? -1) - (historicalDurations[left] ?? -1) || left.localeCompare(right));
+  const results = new Map();
   let nextIndex = 0;
   async function worker() {
-    while (!interruptedSignal && nextIndex < tests.length) {
+    while (!interruptedSignal && nextIndex < scheduledTests.length) {
       const index = nextIndex;
       nextIndex += 1;
-      results[index] = await graphForTest(tests[index]);
+      const test = scheduledTests[index];
+      results.set(test, await graphForTest(test));
     }
   }
   const workerCount = Math.min(options.concurrency, tests.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
   const completedTests = [];
+  const durations = {};
   const failedTests = [];
   const unresolvedStaticTests = [];
-  for (let index = 0; index < tests.length; index += 1) {
-    const test = tests[index];
-    const result = results[index];
+  for (const test of tests) {
+    const result = results.get(test);
     if (!result) continue;
     console.log(`\n▶ ${test}`);
     if (result.stdout) process.stdout.write(result.stdout);
     if (result.stderr) process.stderr.write(result.stderr);
     resultGraph[test] = result.edges;
     completedTests.push(test);
+    durations[test] = result.durationMs;
     if (result.status !== 0) failedTests.push(test);
     if (result.unresolvedStatic) unresolvedStaticTests.push(test);
   }
@@ -304,7 +311,7 @@ async function runTests(tests, oldGraph = {}) {
     for (const globalSetupFile of globalSetupFiles) resultGraph[test].push([test, globalSetupFile]);
     resultGraph[test].push(...globalSetupEdges);
   }
-  return { completedTests, failedTests, resultGraph, interrupted: interruptedSignal, unresolvedStaticTests };
+  return { completedTests, durations, failedTests, resultGraph, interrupted: interruptedSignal, unresolvedStaticTests };
 }
 function dependencyClosure(graph, roots) {
   const adjacency = new Map();
@@ -381,15 +388,16 @@ function finishRun(tests, result, previous) {
   console.error('Tests failed; previous dependency graph was left unchanged and failure status was recorded.');
   process.exitCode = 1;
 }
-async function baseline() {
+async function baseline(previous) {
   const tests = discover();
   console.log(`Building graph from ${tests.length} test file(s)`);
-  finishRun(tests, await runTests(tests));
+  finishRun(tests, await runTests(tests, {}, previous?.durations));
 }
 async function executeSelectionOutcome(tests, prepare) {
   await executeSelectionRun({
     baseline,
-    execute: async (selectedTests, saved) => finishRun(tests, await runTests(selectedTests, saved.graph), saved),
+    execute: async (selectedTests, saved) =>
+      finishRun(tests, await runTests(selectedTests, saved.graph, saved.durations), saved),
     loadRecord: () => loadUsableCache(tests),
     log: console.log,
     prepare,
