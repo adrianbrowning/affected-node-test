@@ -15,6 +15,7 @@ import { buildStaticGraph } from '../src/static-graph.mjs';
 import { getGitChanges } from '../src/git-changes.mjs';
 import {
   executeSelectionRun,
+  selectLastFailed,
   selectTestsForFiles,
   selectTestsSinceLastRun,
 } from '../src/selection-run.mjs';
@@ -71,12 +72,12 @@ function parseArguments(values) {
       concurrency = Number(value);
       index += 1;
     } else if (values[index] === '--dry-run') {
-      if (!['baseline', 'affected', 'related', 'since-last-run'].includes(command)) {
+      if (!['baseline', 'affected', 'related', 'since-last-run', 'last-failed'].includes(command)) {
         failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
       }
       dryRun = true;
     } else if (values[index] === '--output=json') {
-      if (!['baseline', 'affected', 'related', 'since-last-run'].includes(command)) {
+      if (!['baseline', 'affected', 'related', 'since-last-run', 'last-failed'].includes(command)) {
         failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
       }
       output = 'json';
@@ -556,6 +557,14 @@ async function sinceLastRun() {
     selectedLabel: 'test file(s) since last run',
   }));
 }
+async function lastFailed() {
+  const tests = discover();
+  await executeSelectionOutcome(tests, (saved) => ({
+    emptyMessage: 'No previously failing tests.',
+    selection: selectLastFailed({ record: saved }),
+    selectedLabel: 'previously failing test file(s)',
+  }));
+}
 async function related(files) {
   const repositoryFiles = [...new Set(files.map((file) => {
     const path = relative(root, resolve(root, file));
@@ -669,6 +678,8 @@ if (command === 'baseline') {
   await related(options.positionals);
 } else if (command === 'since-last-run') {
   await sinceLastRun();
+} else if (command === 'last-failed') {
+  await lastFailed();
 } else if (command === 'watch') {
   await watchMode();
 } else if (command === 'clear-cache') {

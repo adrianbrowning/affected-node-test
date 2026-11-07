@@ -11,7 +11,7 @@ pnpm add --save-dev affected-node-test
 # or: npm install --save-dev affected-node-test
 ```
 
-Run commands from the project root. Git is required only for `affected`; `baseline`, `related`, and `since-last-run` also work outside a Git repository.
+Run commands from the project root. Git is required only for `affected`; `baseline`, `related`, `since-last-run`, and `last-failed` also work outside a Git repository.
 
 ## Quick start
 
@@ -46,6 +46,7 @@ No configuration is needed for conventional `.test.js`, `.test.mjs`, `.test.cjs`
 | Select committed changes since a branch or commit | `pnpm exec affected-node-test affected origin/main` |
 | Select tests related to explicit paths without Git | `pnpm exec affected-node-test related src/math.mjs` |
 | Select dependencies changed on disk without Git | `pnpm exec affected-node-test since-last-run` |
+| Rerun only tests recorded as failing | `pnpm exec affected-node-test last-failed` |
 | Keep selecting tests as files change | `pnpm exec affected-node-test watch` |
 | Remove the saved graph | `pnpm exec affected-node-test clear-cache` |
 | Validate configuration and discovery without running tests | `pnpm exec affected-node-test doctor` |
@@ -62,6 +63,7 @@ pnpm exec affected-node-test affected --concurrency 4
 pnpm exec affected-node-test affected origin/main --concurrency 4
 pnpm exec affected-node-test related src/math.mjs --concurrency 4
 pnpm exec affected-node-test since-last-run --concurrency 4
+pnpm exec affected-node-test last-failed --concurrency 4
 pnpm exec affected-node-test watch --concurrency 4
 pnpm exec affected-node-test clear-cache
 pnpm exec affected-node-test doctor
@@ -73,7 +75,8 @@ pnpm exec affected-node-test affected --dry-run --output=json
 - `affected` selects staged, unstaged, and untracked changes. `affected REF` also includes committed changes since the merge base of `REF` and `HEAD`. Both run unrecorded tests and tests whose captured dependency trees contain changed files.
 - `related FILE...` requires no Git repository and runs tests related to explicit repository-relative or absolute paths. It shares the same conservative triggers and mappings as `affected`.
 - `since-last-run` requires no Git repository. It compares each test's recorded dependency metadata with the filesystem, reruns changed, unrecorded, and previously failing tests, and updates successful records incrementally.
-- `--dry-run` previews `baseline`, `affected`, `related`, or `since-last-run` selections and their reasons without launching test workers or updating the graph cache. Workspace previews preserve project routing and identify workspace-wide fallbacks.
+- `last-failed` reruns exactly the failures retained by the graph cache and clearly no-ops after they recover. Without a usable cache it conservatively runs the full suite.
+- `--dry-run` previews `baseline`, `affected`, `related`, `since-last-run`, or `last-failed` selections and their reasons without launching test workers or updating the graph cache. Workspace previews preserve project routing and identify workspace-wide fallbacks.
 - Add `--output=json` to a finite command for one versioned, machine-readable execution document, or combine it with `--dry-run` for a selection preview. Informational diagnostics and test output are written to stderr so stdout remains parseable JSON. Workspace commands produce one aggregate document with routing decisions and nested project documents.
 - `watch` performs an initial full run, then persistently watches the project and serially reruns only tests selected by the same dependency graph, conservative triggers, and non-module mappings.
 - `clear-cache` removes the saved dependency graph and is safe to run when no cache exists.
@@ -183,7 +186,7 @@ A workspace root can delegate to isolated project roots instead of defining sing
 }
 ```
 
-Project roots are validated, deduplicated, rejected when overlapping, and run in lexical order. Each project owns its discovery, configuration, dependency graph, and cache. Workspace `baseline`, `affected`, `since-last-run`, `related`, `watch`, `clear-cache`, and read-only `doctor` diagnostics are supported. Git and explicit related paths are routed project-relative to their owning runners; workspace-level changes conservatively run every project baseline. Unchanged projects still check since-last-run records so sticky failures are not lost. Workspace watch runs project watchers concurrently, prefixes their output with project paths, and coordinates readiness and signal-driven shutdown. The workspace `projects` option cannot be mixed with single-project options in the same configuration file.
+Project roots are validated, deduplicated, rejected when overlapping, and run in lexical order. Each project owns its discovery, configuration, dependency graph, and cache. Workspace `baseline`, `affected`, `since-last-run`, `last-failed`, `related`, `watch`, `clear-cache`, and read-only `doctor` diagnostics are supported. Git and explicit related paths are routed project-relative to their owning runners; workspace-level changes conservatively run every project baseline. Unchanged projects still check since-last-run records so sticky failures are not lost. Workspace watch runs project watchers concurrently, prefixes their output with project paths, and coordinates readiness and signal-driven shutdown. The workspace `projects` option cannot be mixed with single-project options in the same configuration file.
 
 ## Known limitations
 

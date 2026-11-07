@@ -48,6 +48,16 @@ ${concurrency}
 
 Example:
   affected-node-test since-last-run --concurrency 4`,
+  'last-failed': `Rerun test files recorded as failing by the previous execution.
+
+Usage: affected-node-test last-failed [--concurrency N] [--dry-run] [--output=json]
+
+${concurrency}
+  --dry-run        Show recorded failures without running tests or updating the cache.
+  --output=json    Emit a versioned JSON preview or execution result.
+
+Example:
+  affected-node-test last-failed --dry-run`,
   watch: `Build the graph, watch the project, and serially rerun selected tests.
 
 Usage: affected-node-test watch [--concurrency N]
@@ -92,6 +102,7 @@ Commands:
   affected [REF]        Run tests affected by Git changes.
   related <FILE...>     Run tests related to explicit files without Git.
   since-last-run        Run tests whose recorded dependencies changed on disk.
+  last-failed           Rerun test files recorded as failing.
   watch                 Watch files and serially rerun selected tests.
   clear-cache           Remove the saved dependency graph.
   doctor                Validate setup without running tests.

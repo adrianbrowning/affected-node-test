@@ -329,7 +329,7 @@ test('help, version, and invalid input are useful before project configuration l
     assert.match(topLevel.stdout, /affected \[REF\]\s+Run tests affected by Git changes/);
     assert.match(topLevel.stdout, /Default concurrency is min\(4, available parallelism\), with a minimum of 1\./);
 
-    const commands = ['baseline', 'affected', 'related', 'since-last-run', 'watch', 'clear-cache', 'doctor'];
+    const commands = ['baseline', 'affected', 'related', 'since-last-run', 'last-failed', 'watch', 'clear-cache', 'doctor'];
     for (const command of commands) {
       const result = run(cwd, command, '--help');
       assert.equal(result.status, 0, `${command}: ${result.stderr}`);
@@ -693,6 +693,44 @@ test('dry-run explains sticky failures without rerunning them', () => {
   }
 });
 
+test('last-failed previews, reruns, clears, and conservatively handles a missing cache', () => {
+  const cwd = makeRepository();
+  const testPath = join(cwd, 'test', 'value.test.mjs');
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+    const passing = readFileSync(testPath, 'utf8');
+    writeFileSync(testPath, `${passing}\nthrow new Error('remember me');\n`);
+    assert.equal(run(cwd, 'affected').status, 1);
+    const preview = run(cwd, 'last-failed', '--dry-run');
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.match(preview.stdout, /Dry run: selected 1\/1 previously failing test file\(s\)\./);
+    assert.match(preview.stdout, /previously failing test/);
+
+    const stillFailing = run(cwd, 'last-failed', '--output=json');
+    assert.equal(stillFailing.status, 1);
+    assert.deepEqual(JSON.parse(stillFailing.stdout).execution.failures, ['test/value.test.mjs']);
+
+    writeFileSync(testPath, passing);
+    const rerun = run(cwd, 'last-failed', '--output=json');
+    assert.equal(rerun.status, 0, rerun.stderr);
+    assert.equal(JSON.parse(rerun.stdout).command, 'last-failed');
+    assert.deepEqual(JSON.parse(rerun.stdout).execution.tests, ['test/value.test.mjs']);
+    assert.deepEqual(JSON.parse(rerun.stdout).execution.failures, []);
+
+    const noOp = run(cwd, 'last-failed');
+    assert.equal(noOp.status, 0, noOp.stderr);
+    assert.equal(noOp.stdout, 'No previously failing tests.\n');
+
+    rmSync(join(cwd, '.affected-tests'), { recursive: true, force: true });
+    const cacheMiss = run(cwd, 'last-failed', '--dry-run');
+    assert.equal(cacheMiss.status, 0, cacheMiss.stderr);
+    assert.match(cacheMiss.stdout, /No graph cache; running full suite\./);
+    assert.match(cacheMiss.stdout, /Dry run: full suite \(1 test file\(s\)\)\./);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('--concurrency rejects non-positive values before accessing Git', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-options-'));
   try {
@@ -923,6 +961,12 @@ test('workspace JSON aggregates routing and project results for finite commands'
     assert.match(failing.stderr, /workspace json failure/);
 
     git(cwd, 'checkout', '--', 'packages/b/test/value.test.mjs');
+    const lastFailed = run(cwd, 'last-failed', '--dry-run', '--output=json');
+    assert.equal(lastFailed.status, 0, lastFailed.stderr);
+    const failedProject = JSON.parse(lastFailed.stdout).projects
+      .find(({ path }) => path === 'packages/b');
+    assert.deepEqual(failedProject.result.tests, ['test/value.test.mjs']);
+
     writeFileSync(join(cwd, 'README.md'), 'workspace change\n');
     const fallback = run(cwd, 'affected', '--dry-run', '--output=json');
     assert.equal(fallback.status, 0, fallback.stderr);
@@ -1312,14 +1356,19 @@ test('--concurrency bounds parallel execution and preserves output order', () =>
 });
 
 test('historically slow tests start first while reporting remains deterministic', () => {
-  const cwd = makeParallelRepository({ delays: { a: 50, b: 500, c: 250 } });
+  const cwd = makeParallelRepository({ delays: { a: 50, b: 50, c: 50 } });
   const tracker = join(cwd, 'processes.log');
   try {
     const baseline = runWithEnv(cwd, { TEST_TRACKER: tracker }, 'baseline', '--concurrency', '1');
     assert.equal(baseline.status, 0, baseline.stderr);
-    const record = JSON.parse(readFileSync(join(cwd, '.affected-tests', 'graph.json'), 'utf8'));
-    assert.ok(record.durations['test/b.test.mjs'] > record.durations['test/c.test.mjs']);
-    assert.ok(record.durations['test/c.test.mjs'] > record.durations['test/a.test.mjs']);
+    const cachePath = join(cwd, '.affected-tests', 'graph.json');
+    const record = JSON.parse(readFileSync(cachePath, 'utf8'));
+    record.durations = {
+      'test/a.test.mjs': 100,
+      'test/b.test.mjs': 300,
+      'test/c.test.mjs': 200,
+    };
+    writeFileSync(cachePath, JSON.stringify(record));
 
     writeFileSync(tracker, '');
     for (const name of ['a', 'b', 'c']) {

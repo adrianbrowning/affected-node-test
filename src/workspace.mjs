@@ -151,7 +151,7 @@ export function resolveWorkspaceProjects({ root, projects }) {
 }
 
 export async function runWorkspace({ root, projects, command, args, cliPath }) {
-  const supportedCommands = new Set(['baseline', 'since-last-run', 'clear-cache', 'related', 'affected', 'watch']);
+  const supportedCommands = new Set(['baseline', 'since-last-run', 'last-failed', 'clear-cache', 'related', 'affected', 'watch']);
   if (!supportedCommands.has(command)) {
     throw new Error(`Workspace command is not implemented yet: ${command}`);
   }

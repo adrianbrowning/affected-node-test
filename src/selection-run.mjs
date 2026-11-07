@@ -91,6 +91,18 @@ export function selectTestsSinceLastRun({ dependencyStateChanged, record, tests 
   };
 }
 
+export function selectLastFailed({ record }) {
+  const tests = [...record.failedTests].sort();
+  const reasons = reasonCollector();
+  for (const test of tests) reasons.add(test, { kind: 'previous-failure' });
+  return {
+    kind: 'selected',
+    messages: [],
+    reasons: reasons.forTests(tests),
+    tests,
+  };
+}
+
 export function selectTestsForFiles({ config, files, record, tests }) {
   for (const file of files) {
     const pattern = config.forceRerunTriggers.find((candidate) => matchesPatterns(file, [candidate]));

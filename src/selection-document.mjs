@@ -1,6 +1,7 @@
 const providers = Object.freeze({
   affected: 'git',
   baseline: 'baseline',
+  'last-failed': 'cache',
   related: 'explicit-files',
   'since-last-run': 'filesystem',
 });

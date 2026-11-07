@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   executeSelectionRun,
+  selectLastFailed,
   selectTestsForFiles,
   selectTestsSinceLastRun,
 } from '../src/selection-run.mjs';
@@ -197,6 +198,17 @@ test('mtime selection returns the same normalized targeted outcome', () => {
     messages: [],
     reasons: {
       'test/b.test.mjs': [{ kind: 'unrecorded-test' }],
+    },
+    tests: ['test/b.test.mjs'],
+  });
+});
+
+test('last-failed selection returns only sticky failures with structured reasons', () => {
+  assert.deepEqual(selectLastFailed({ record }), {
+    kind: 'selected',
+    messages: [],
+    reasons: {
+      'test/b.test.mjs': [{ kind: 'previous-failure' }],
     },
     tests: ['test/b.test.mjs'],
   });
