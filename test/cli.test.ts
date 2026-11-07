@@ -325,6 +325,55 @@ test('--help succeeds outside a Git repository', () => {
   }
 });
 
+test('init previews, writes, repeats idempotently, and preserves conflicts', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-init-'));
+  const packagePath = join(cwd, 'package.json');
+  const initialPackage = '{"name":"init-fixture","scripts":{"test":"node --test"}}\n';
+  writeFileSync(packagePath, initialPackage);
+  try {
+    const preview = run(cwd, 'init');
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.match(preview.stdout, /Would create affected-node-test\.config\.json/);
+    assert.match(preview.stdout, /Would update \.gitignore: add \.affected-tests\//);
+    assert.match(preview.stdout, /Would update package\.json: add script test:affected/);
+    assert.match(preview.stdout, /Would update package\.json: add script test:baseline/);
+    assert.match(preview.stdout, /Preview only; rerun with --write to apply changes\./);
+    assert.equal(readFileSync(packagePath, 'utf8'), initialPackage);
+    assert.equal(existsSync(join(cwd, 'affected-node-test.config.json')), false);
+    assert.equal(existsSync(join(cwd, '.gitignore')), false);
+
+    const write = run(cwd, 'init', '--write');
+    assert.equal(write.status, 0, write.stderr);
+    assert.match(write.stdout, /Created affected-node-test\.config\.json/);
+    assert.match(write.stdout, /Updated \.gitignore: added \.affected-tests\//);
+    assert.match(write.stdout, /Updated package\.json: added script test:affected/);
+    assert.match(write.stdout, /Updated package\.json: added script test:baseline/);
+    assert.deepEqual(JSON.parse(readFileSync(join(cwd, 'affected-node-test.config.json'), 'utf8')), {
+      $schema: './node_modules/affected-node-test/schema/affected-node-test.schema.json',
+    });
+    assert.match(readFileSync(join(cwd, '.gitignore'), 'utf8'), /^\.affected-tests\/$/m);
+    const writtenPackage = JSON.parse(readFileSync(packagePath, 'utf8'));
+    assert.equal(writtenPackage.scripts.test, 'node --test');
+    assert.equal(writtenPackage.scripts['test:affected'], 'affected-node-test affected');
+    assert.equal(writtenPackage.scripts['test:baseline'], 'affected-node-test baseline');
+
+    const repeat = run(cwd, 'init', '--write');
+    assert.equal(repeat.status, 0, repeat.stderr);
+    assert.equal(repeat.stdout, 'No changes needed.\n');
+
+    writeFileSync(join(cwd, 'affected-node-test.config.json'), '{"include":["spec/**"]}\n');
+    writtenPackage.scripts['test:affected'] = 'custom-runner';
+    writeFileSync(packagePath, `${JSON.stringify(writtenPackage, null, 2)}\n`);
+    const conflict = run(cwd, 'init', '--write');
+    assert.equal(conflict.status, 1);
+    assert.match(conflict.stderr, /Conflict: affected-node-test\.config\.json already exists with different content; left unchanged\./);
+    assert.match(conflict.stderr, /Conflict: package\.json script test:affected is already "custom-runner"; left unchanged\./);
+    assert.equal(JSON.parse(readFileSync(packagePath, 'utf8')).scripts['test:affected'], 'custom-runner');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('help, version, and invalid input are useful before project configuration loads', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-cli-info-'));
   writeFileSync(join(cwd, 'affected-node-test.config.json'), '{ invalid json\n');
@@ -337,7 +386,7 @@ test('help, version, and invalid input are useful before project configuration l
     assert.match(topLevel.stdout, /affected \[REF\]\s+Run tests affected by Git changes/);
     assert.match(topLevel.stdout, /Default concurrency is min\(4, available parallelism\), with a minimum of 1\./);
 
-    const commands = ['baseline', 'affected', 'related', 'since-last-run', 'last-failed', 'watch', 'clear-cache', 'doctor'];
+    const commands = ['baseline', 'affected', 'related', 'since-last-run', 'last-failed', 'watch', 'clear-cache', 'doctor', 'init'];
     for (const command of commands) {
       const result = run(cwd, command, '--help');
       assert.equal(result.status, 0, `${command}: ${result.stderr}`);

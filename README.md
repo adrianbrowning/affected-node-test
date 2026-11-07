@@ -50,6 +50,7 @@ No configuration is needed for conventional JavaScript or TypeScript `.test` and
 | Keep selecting tests as files change | `pnpm exec affected-node-test watch` |
 | Remove the saved graph | `pnpm exec affected-node-test clear-cache` |
 | Validate configuration and discovery without running tests | `pnpm exec affected-node-test doctor` |
+| Preview or apply safe onboarding changes | `pnpm exec affected-node-test init` or `pnpm exec affected-node-test init --write` |
 | Preview selected tests and reasons without running them | `pnpm exec affected-node-test affected --dry-run` |
 | Consume one machine-readable execution result | `pnpm exec affected-node-test affected --output=json` |
 | Discover commands or command-specific options | `pnpm exec affected-node-test --help` or `pnpm exec affected-node-test affected --help` |
@@ -83,6 +84,7 @@ pnpm exec affected-node-test affected --project 'packages/api-*'
 - In a workspace, repeatable `--project GLOB` options restrict finite and watch commands to matching configured project paths. Filters preserve lexical project order and fail when no projects match.
 - `watch` performs an initial full run, then persistently watches the project and serially reruns only tests selected by the same dependency graph, conservative triggers, and non-module mappings.
 - `clear-cache` removes the saved dependency graph and is safe to run when no cache exists.
+- `init` previews configuration, `.gitignore`, and package-script changes without writing by default. Add `--write` to apply non-conflicting changes. Existing configuration and conflicting scripts are preserved and reported; repeated initialization is a no-op.
 - The graph cache is tied to the exact Node version, `NODE_OPTIONS`, package manifests, lockfiles, npm configuration, Node version files, and TypeScript configuration files.
 - Per-test dependency state records include modification time and size. Missing or changed dependencies select that test; project-wide fingerprints remain the conservative outer safety layer.
 - Missing/stale cache, missing merge bases, removed tests, unknown non-test JS files, and key configuration changes cause a full run. Newly discovered tests run incrementally and extend the existing record.

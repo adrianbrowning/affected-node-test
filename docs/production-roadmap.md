@@ -8,7 +8,7 @@ This roadmap targets parity with Vitest's affected-test selection subsystem, not
 2. Add workflow shortcuts: [`last-failed`](https://github.com/adrianbrowning/affected-node-test/issues/11), [percentage concurrency](https://github.com/adrianbrowning/affected-node-test/issues/13), then [workspace filtering](https://github.com/adrianbrowning/affected-node-test/issues/14).
 3. Bound [large child output](https://github.com/adrianbrowning/affected-node-test/issues/17).
 4. Migrate development to [TypeScript on Node 26](https://github.com/adrianbrowning/affected-node-test/issues/10).
-5. Add read-only [`init`](https://github.com/adrianbrowning/affected-node-test/issues/12).
+5. Add read-only [`init`](https://github.com/adrianbrowning/affected-node-test/issues/12). *(complete)*
 6. Complete release gates in order: [cross-platform process verification](https://github.com/adrianbrowning/affected-node-test/issues/15), [package and publishing readiness](https://github.com/adrianbrowning/affected-node-test/issues/18), then [final reviews](https://github.com/adrianbrowning/affected-node-test/issues/16).
 
 ## Completed foundation

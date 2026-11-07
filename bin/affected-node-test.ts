@@ -52,6 +52,7 @@ import {
 } from '../src/project-config.ts';
 import type { ProjectConfig } from '../src/project-config.ts';
 import { errorMessage, isNodeError } from '../src/errors.ts';
+import { initializeProject } from '../src/init.ts';
 
 const root = process.cwd();
 const sourceExtension = import.meta.url.endsWith('.ts') ? 'ts' : 'js';
@@ -86,6 +87,21 @@ const command: CommandName = isCommandName(requestedCommand)
 if (args.includes('--help') || args.includes('-h')) {
   console.log(commandHelp(command));
   process.exit(0);
+}
+if (command === 'init') {
+  const invalid = args.find((argument) => argument !== '--write');
+  if (invalid) failUsage(`Unknown option: ${invalid}`, commandHelp(command));
+  if (args.filter((argument) => argument === '--write').length > 1) {
+    failUsage('--write may only be specified once.', commandHelp(command));
+  }
+  try {
+    const result = initializeProject(root, { write: args.includes('--write') });
+    for (const line of result.output) console.log(line);
+    for (const conflict of result.conflicts) console.error(conflict);
+    process.exit(result.conflicts.length ? 1 : 0);
+  } catch (error: unknown) {
+    fail(errorMessage(error));
+  }
 }
 function parseArguments(values: string[]) {
   const positionals: string[] = [];

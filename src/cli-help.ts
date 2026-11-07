@@ -86,6 +86,16 @@ Options:
 
 Example:
   affected-node-test doctor`,
+  init: `Preview or apply safe onboarding changes for the current package.
+
+Usage: affected-node-test init [--write]
+
+Options:
+  --write       Apply proposed changes. Without this option, init is read-only.
+  -h, --help    Show this command's help.
+
+Example:
+  affected-node-test init --write`,
 };
 
 export type CommandName = keyof typeof commandHelpText;
@@ -114,6 +124,7 @@ Commands:
   watch                 Watch files and serially rerun selected tests.
   clear-cache           Remove the saved dependency graph.
   doctor                Validate setup without running tests.
+  init                  Preview safe onboarding changes.
 
 Global options:
   -h, --help       Show this help or COMMAND help.

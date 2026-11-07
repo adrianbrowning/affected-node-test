@@ -105,7 +105,7 @@ Acceptance criteria:
 
 ## DX-7: optional onboarding automation
 
-Status: planned ([#12](https://github.com/adrianbrowning/affected-node-test/issues/12)).
+Status: complete ([#12](https://github.com/adrianbrowning/affected-node-test/issues/12)).
 
 User story: a user can scaffold safe defaults after understanding the tool.
 
@@ -121,7 +121,7 @@ Acceptance criteria:
 
 ## DX-8: native TypeScript development
 
-Status: planned ([#10](https://github.com/adrianbrowning/affected-node-test/issues/10)).
+Status: complete ([#10](https://github.com/adrianbrowning/affected-node-test/issues/10)).
 
 User story: a contributor gets strict type safety while running source and tests directly on Node 26 without a runtime loader.
 
