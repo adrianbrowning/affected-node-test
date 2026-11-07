@@ -36,7 +36,7 @@ test('the published package and checked quickstart use the affected-node-test id
   assert.ok(files.includes('dist/bin/affected-node-test.js'));
   const packedBin = packedFiles.find((file) => file.path === 'dist/bin/affected-node-test.js');
   assert.ok(packedBin);
-  assert.ok(packedBin.mode & 0o111);
+  if (process.platform !== 'win32') assert.ok(packedBin.mode & 0o111);
   assert.ok(files.includes('dist/src/selection-run.js'));
   assert.ok(!files.some((file) => file.endsWith('.ts')));
   assert.ok(files.includes('schema/affected-node-test.schema.json'));
