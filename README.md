@@ -50,6 +50,7 @@ No configuration is needed for conventional `.test.js`, `.test.mjs`, `.test.cjs`
 | Remove the saved graph | `pnpm exec affected-node-test clear-cache` |
 | Validate configuration and discovery without running tests | `pnpm exec affected-node-test doctor` |
 | Preview selected tests and reasons without running them | `pnpm exec affected-node-test affected --dry-run` |
+| Consume one machine-readable execution result | `pnpm exec affected-node-test affected --output=json` |
 | Discover commands or command-specific options | `pnpm exec affected-node-test --help` or `pnpm exec affected-node-test affected --help` |
 | Show the installed version | `pnpm exec affected-node-test --version` |
 
@@ -64,6 +65,8 @@ pnpm exec affected-node-test since-last-run --concurrency 4
 pnpm exec affected-node-test watch --concurrency 4
 pnpm exec affected-node-test clear-cache
 pnpm exec affected-node-test doctor
+pnpm exec affected-node-test affected --output=json
+pnpm exec affected-node-test affected --dry-run --output=json
 ```
 
 - `baseline` runs all discovered test files, merges literal static-import edges with observed runtime module-resolution edges, and writes `.affected-tests/graph.json` after a passing suite.
@@ -71,7 +74,7 @@ pnpm exec affected-node-test doctor
 - `related FILE...` requires no Git repository and runs tests related to explicit repository-relative or absolute paths. It shares the same conservative triggers and mappings as `affected`.
 - `since-last-run` requires no Git repository. It compares each test's recorded dependency metadata with the filesystem, reruns changed, unrecorded, and previously failing tests, and updates successful records incrementally.
 - `--dry-run` previews `baseline`, `affected`, `related`, or `since-last-run` selections and their reasons without launching test workers or updating the graph cache. Workspace previews preserve project routing and identify workspace-wide fallbacks.
-- Add `--output=json` to a single-project `--dry-run` command for one versioned, machine-readable selection document. Informational diagnostics are written to stderr so stdout remains parseable JSON. Workspace JSON aggregation is not yet supported.
+- Add `--output=json` to a single-project finite command for one versioned, machine-readable execution document, or combine it with `--dry-run` for a selection preview. Informational diagnostics and test output are written to stderr so stdout remains parseable JSON. Workspace JSON aggregation is not yet supported.
 - `watch` performs an initial full run, then persistently watches the project and serially reruns only tests selected by the same dependency graph, conservative triggers, and non-module mappings.
 - `clear-cache` removes the saved dependency graph and is safe to run when no cache exists.
 - The graph cache is tied to the exact Node version, `NODE_OPTIONS`, package manifests, lockfiles, npm configuration, Node version files, and TypeScript configuration files.
@@ -81,6 +84,23 @@ pnpm exec affected-node-test doctor
 - Test files run in a bounded worker pool. `--concurrency N` sets its size; the default is the smaller of four and the runtime's available parallelism. Successful durations are cached so historically slower tests start first, while buffered reporting remains deterministic.
 - `SIGINT` and `SIGTERM` stop active test processes, clean temporary edge logs, preserve the previous cache, and use conventional exit codes.
 - Watch events are debounced, cache/build/dependency directories are ignored, and changes arriving during a run are queued for the next serialized rerun.
+
+### JSON output
+
+JSON documents currently use `schemaVersion: 1`. Every document includes `mode`, `command`, `provider`, `projectRoot`, selection `outcome`, selected or full-suite `tests`, `totalTests`, structured `reasons`, and any conservative `fallback`. Execution documents additionally include:
+
+```json
+{
+  "execution": {
+    "status": "passed",
+    "tests": ["test/value.test.mjs"],
+    "failures": [],
+    "exitCode": 0
+  }
+}
+```
+
+`execution.status` is `passed`, `failed`, or `interrupted`. The CLI process exit code matches `execution.exitCode`.
 
 ## Development
 

@@ -19,7 +19,10 @@ import {
   selectTestsSinceLastRun,
 } from '../src/selection-run.mjs';
 import { renderSelectionPreview } from '../src/selection-preview.mjs';
-import { createSelectionPreviewDocument } from '../src/selection-document.mjs';
+import {
+  createSelectionPreviewDocument,
+  createSelectionRunDocument,
+} from '../src/selection-document.mjs';
 import { runWorkspace } from '../src/workspace.mjs';
 import { sendWatchReady } from '../src/watch-protocol.mjs';
 import { discoverTestFiles } from '../src/test-discovery.mjs';
@@ -86,9 +89,6 @@ function parseArguments(values) {
   return { concurrency, dryRun, output, positionals };
 }
 const options = parseArguments(args);
-if (options.output === 'json' && !options.dryRun) {
-  failUsage('--output=json currently requires --dry-run.', commandHelp(command));
-}
 if (command === 'related' && !options.positionals.length) {
   failUsage('related requires at least one FILE.', commandHelp(command));
 }
@@ -329,8 +329,8 @@ async function runTests(tests, oldGraph = {}, historicalDurations = {}) {
   for (const test of tests) {
     const result = results.get(test);
     if (!result) continue;
-    console.log(`\n▶ ${test}`);
-    if (result.stdout) process.stdout.write(result.stdout);
+    (options.output === 'json' ? console.error : console.log)(`\n▶ ${test}`);
+    if (result.stdout) (options.output === 'json' ? process.stderr : process.stdout).write(result.stdout);
     if (result.stderr) process.stderr.write(result.stderr);
     resultGraph[test] = result.edges;
     completedTests.push(test);
@@ -423,14 +423,15 @@ function finishRun(tests, result, previous) {
   if (outcome.status === 'interrupted') {
     console.error(`Test run interrupted by ${outcome.signal}; previous graph was left unchanged.`);
     process.exitCode = signalExitCodes[outcome.signal];
-    return;
+    return { ...outcome, exitCode: process.exitCode };
   }
   if (outcome.status === 'passed') {
     process.exitCode = 0;
-    return;
+    return { ...outcome, exitCode: 0 };
   }
   console.error('Tests failed; previous dependency graph was left unchanged and failure status was recorded.');
   process.exitCode = 1;
+  return { ...outcome, exitCode: 1 };
 }
 async function baseline(previous, selection) {
   const tests = discover();
@@ -442,14 +443,25 @@ async function baseline(previous, selection) {
     for (const line of renderSelectionPreview({ allTests: tests, selection })) console.log(line);
     return;
   }
-  console.log(`Building graph from ${tests.length} test file(s)`);
-  finishRun(tests, await runTests(tests, {}, previous?.durations));
+  (options.output === 'json' ? console.error : console.log)(`Building graph from ${tests.length} test file(s)`);
+  const result = await runTests(tests, {}, previous?.durations);
+  const runStatus = finishRun(tests, result, previous);
+  if (options.output === 'json') printRunDocument(tests, selection, result, runStatus);
 }
 async function executeSelectionOutcome(tests, prepare) {
   await executeSelectionRun({
     baseline,
     empty: options.output === 'json'
-      ? (_saved, selection) => printSelectionDocument(tests, selection)
+      ? (_saved, selection) => {
+        if (options.dryRun) {
+          printSelectionDocument(tests, selection);
+          return;
+        }
+        printRunDocument(tests, selection, {
+          completedTests: [],
+          failedTests: [],
+        }, { exitCode: 0, status: 'passed' });
+      }
       : undefined,
     execute: async (selectedTests, saved, selection, details) => {
       if (options.dryRun) {
@@ -464,7 +476,9 @@ async function executeSelectionOutcome(tests, prepare) {
         })) console.log(line);
         return;
       }
-      finishRun(tests, await runTests(selectedTests, saved.graph, saved.durations), saved);
+      const result = await runTests(selectedTests, saved.graph, saved.durations);
+      const runStatus = finishRun(tests, result, saved);
+      if (options.output === 'json') printRunDocument(tests, selection, result, runStatus);
     },
     loadRecord: () => loadUsableCache(tests),
     log: options.output === 'json' ? console.error : console.log,
@@ -479,6 +493,17 @@ function printSelectionDocument(tests, selection) {
     cacheFallback,
     command,
     projectRoot: root,
+    selection,
+  }), null, 2));
+}
+function printRunDocument(tests, selection, result, runStatus) {
+  console.log(JSON.stringify(createSelectionRunDocument({
+    allTests: tests,
+    cacheFallback,
+    command,
+    projectRoot: root,
+    result,
+    runStatus,
     selection,
   }), null, 2));
 }

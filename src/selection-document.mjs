@@ -5,10 +5,12 @@ const providers = Object.freeze({
   'since-last-run': 'filesystem',
 });
 
-export function createSelectionPreviewDocument({
+function createSelectionDocument({
   allTests,
   cacheFallback,
   command,
+  execution,
+  mode,
   projectRoot,
   selection,
 }) {
@@ -16,7 +18,7 @@ export function createSelectionPreviewDocument({
   const tests = selected ? selection.tests : allTests;
   return {
     schemaVersion: 1,
-    mode: 'preview',
+    mode,
     command,
     provider: providers[command],
     projectRoot,
@@ -25,5 +27,23 @@ export function createSelectionPreviewDocument({
     totalTests: allTests.length,
     reasons: selected ? selection.reasons : {},
     fallback: selected ? null : (selection?.reason ?? cacheFallback ?? null),
+    ...(execution ? { execution } : {}),
   };
+}
+
+export function createSelectionPreviewDocument(options) {
+  return createSelectionDocument({ ...options, mode: 'preview' });
+}
+
+export function createSelectionRunDocument({ result, runStatus, ...options }) {
+  return createSelectionDocument({
+    ...options,
+    mode: 'run',
+    execution: {
+      status: runStatus.status,
+      tests: result.completedTests,
+      failures: result.failedTests,
+      exitCode: runStatus.exitCode,
+    },
+  });
 }

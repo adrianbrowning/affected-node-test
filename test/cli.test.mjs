@@ -591,6 +591,88 @@ test('JSON dry-run emits one versioned selection document without workers or cac
   }
 });
 
+test('JSON finite runs emit one document for passing, failing, no-op, and fallback outcomes', () => {
+  const cwd = makeRepository();
+  const testPath = join(cwd, 'test', 'value.test.mjs');
+  writeFileSync(testPath, [
+    "console.log('json-worker-output');",
+    readFileSync(testPath, 'utf8'),
+  ].join('\n'));
+  git(cwd, 'add', 'test/value.test.mjs');
+  git(cwd, 'commit', '-qm', 'add worker output');
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+
+    writeFileSync(join(cwd, 'src', 'value.mjs'), 'export const value = 1; // changed\n');
+    const passing = run(cwd, 'affected', '--output=json');
+    assert.equal(passing.status, 0, passing.stderr);
+    assert.deepEqual(JSON.parse(passing.stdout), {
+      schemaVersion: 1,
+      mode: 'run',
+      command: 'affected',
+      provider: 'git',
+      projectRoot: cwd,
+      outcome: 'selected',
+      tests: ['test/value.test.mjs'],
+      totalTests: 1,
+      reasons: {
+        'test/value.test.mjs': [{
+          file: 'src/value.mjs',
+          kind: 'dependency',
+          path: ['test/value.test.mjs', 'src/value.mjs'],
+        }],
+      },
+      fallback: null,
+      execution: {
+        status: 'passed',
+        tests: ['test/value.test.mjs'],
+        failures: [],
+        exitCode: 0,
+      },
+    });
+    assert.match(passing.stderr, /json-worker-output/);
+    assert.doesNotMatch(passing.stdout, /json-worker-output|▶|Selected/);
+
+    writeFileSync(join(cwd, 'src', 'value.mjs'), 'export const value = 1;\n');
+    const noOp = run(cwd, 'affected', '--output=json');
+    assert.equal(noOp.status, 0, noOp.stderr);
+    assert.equal(JSON.parse(noOp.stdout).outcome, 'no-tests');
+    assert.deepEqual(JSON.parse(noOp.stdout).execution, {
+      status: 'passed',
+      tests: [],
+      failures: [],
+      exitCode: 0,
+    });
+
+    writeFileSync(testPath, `${readFileSync(testPath, 'utf8')}\nthrow new Error('json failure');\n`);
+    const failing = run(cwd, 'affected', '--output=json');
+    assert.equal(failing.status, 1);
+    assert.equal(JSON.parse(failing.stdout).execution.status, 'failed');
+    assert.deepEqual(JSON.parse(failing.stdout).execution.failures, ['test/value.test.mjs']);
+    assert.equal(JSON.parse(failing.stdout).execution.exitCode, 1);
+    assert.match(failing.stderr, /json failure/);
+
+    git(cwd, 'checkout', '--', 'test/value.test.mjs');
+    writeFileSync(join(cwd, 'src', 'new.mjs'), 'export const added = true;\n');
+    const fallback = run(cwd, 'affected', '--output=json');
+    assert.equal(fallback.status, 0, fallback.stderr);
+    assert.equal(JSON.parse(fallback.stdout).outcome, 'full-suite');
+    assert.deepEqual(JSON.parse(fallback.stdout).fallback, {
+      files: ['src/new.mjs'],
+      kind: 'unknown-code',
+    });
+    assert.deepEqual(JSON.parse(fallback.stdout).execution.tests, ['test/value.test.mjs']);
+    assert.deepEqual(JSON.parse(fallback.stdout).execution.failures, []);
+
+    const baseline = run(cwd, 'baseline', '--output=json');
+    assert.equal(baseline.status, 0, baseline.stderr);
+    assert.equal(JSON.parse(baseline.stdout).command, 'baseline');
+    assert.equal(JSON.parse(baseline.stdout).execution.status, 'passed');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('dry-run explains sticky failures without rerunning them', () => {
   const cwd = makeRepository();
   const testPath = join(cwd, 'test', 'value.test.mjs');

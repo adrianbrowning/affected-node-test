@@ -10,7 +10,7 @@ Usage: affected-node-test baseline [--concurrency N] [--dry-run] [--output=json]
 
 ${concurrency}
   --dry-run        Show the full suite without running tests or updating the cache.
-  --output=json    Emit a versioned JSON preview. Requires --dry-run.
+  --output=json    Emit a versioned JSON preview or execution result.
 
 Example:
   affected-node-test baseline --concurrency 4`,
@@ -22,7 +22,7 @@ REF defaults to working-tree changes. When provided, changes are compared from i
 
 ${concurrency}
   --dry-run        Show what would run and why without running tests or updating the cache.
-  --output=json    Emit a versioned JSON preview. Requires --dry-run.
+  --output=json    Emit a versioned JSON preview or execution result.
 
 Example:
   affected-node-test affected origin/main --concurrency 4`,
@@ -34,7 +34,7 @@ FILE may be project-relative or absolute and must remain inside the project root
 
 ${concurrency}
   --dry-run        Show what would run and why without running tests or updating the cache.
-  --output=json    Emit a versioned JSON preview. Requires --dry-run.
+  --output=json    Emit a versioned JSON preview or execution result.
 
 Example:
   affected-node-test related src/math.mjs --concurrency 4`,
@@ -44,7 +44,7 @@ Usage: affected-node-test since-last-run [--concurrency N] [--dry-run] [--output
 
 ${concurrency}
   --dry-run        Show what would run and why without running tests or updating the cache.
-  --output=json    Emit a versioned JSON preview. Requires --dry-run.
+  --output=json    Emit a versioned JSON preview or execution result.
 
 Example:
   affected-node-test since-last-run --concurrency 4`,
