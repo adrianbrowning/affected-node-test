@@ -37,6 +37,14 @@ test('file selection returns normalized targeted and conservative outcomes', () 
   }), {
     kind: 'selected',
     messages: [],
+    reasons: {
+      'test/a.test.mjs': [{
+        file: 'src/shared.mjs',
+        kind: 'dependency',
+        path: ['test/a.test.mjs', 'src/a.mjs', 'src/shared.mjs'],
+      }],
+      'test/b.test.mjs': [{ kind: 'previous-failure' }],
+    },
     tests,
   });
 
@@ -48,6 +56,11 @@ test('file selection returns normalized targeted and conservative outcomes', () 
   }), {
     kind: 'baseline',
     message: 'Force-rerun trigger matched: fixtures/template.html; running full suite.',
+    reason: {
+      file: 'fixtures/template.html',
+      kind: 'force-rerun-trigger',
+      pattern: 'fixtures/**',
+    },
   });
 
   assert.deepEqual(selectTestsForFiles({
@@ -58,6 +71,37 @@ test('file selection returns normalized targeted and conservative outcomes', () 
   }), {
     kind: 'baseline',
     message: 'Unknown code file changed (src/new.ts); running full suite.',
+    reason: { files: ['src/new.ts'], kind: 'unknown-code' },
+  });
+
+  assert.deepEqual(selectTestsForFiles({
+    config,
+    files: ['package.json'],
+    record,
+    tests,
+  }), {
+    kind: 'baseline',
+    message: 'Project configuration changed; running full suite.',
+    reason: { files: ['package.json'], kind: 'project-configuration' },
+  });
+
+  assert.deepEqual(selectTestsForFiles({
+    config: {
+      ...config,
+      watchTriggerPatterns: [{ pattern: 'fixtures/**', tests: ['test/missing*'] }],
+    },
+    files: ['fixtures/value.txt'],
+    record,
+    tests,
+  }), {
+    kind: 'baseline',
+    message: 'Watch trigger matched fixtures/value.txt but selected no tests; running full suite.',
+    reason: {
+      file: 'fixtures/value.txt',
+      kind: 'watch-trigger-empty',
+      pattern: 'fixtures/**',
+      testPatterns: ['test/missing*'],
+    },
   });
 
   assert.deepEqual(selectTestsForFiles({
@@ -71,6 +115,13 @@ test('file selection returns normalized targeted and conservative outcomes', () 
   }), {
     kind: 'selected',
     messages: ['Watch trigger matched fixtures/value.txt; selected 1 mapped test file(s).'],
+    reasons: {
+      'test/a.test.mjs': [{
+        file: 'fixtures/value.txt',
+        kind: 'watch-trigger',
+        pattern: 'fixtures/**',
+      }],
+    },
     tests: ['test/a.test.mjs'],
   });
 
@@ -86,6 +137,9 @@ test('file selection returns normalized targeted and conservative outcomes', () 
   }), {
     kind: 'selected',
     messages: [],
+    reasons: {
+      'test/b.test.mjs': [{ kind: 'unrecorded-test' }],
+    },
     tests: ['test/b.test.mjs'],
   });
 });
@@ -106,6 +160,12 @@ test('mtime selection returns the same normalized targeted outcome', () => {
   }), {
     kind: 'selected',
     messages: [],
+    reasons: {
+      'test/b.test.mjs': [
+        { kind: 'previous-failure' },
+        { kind: 'dependency-state-change' },
+      ],
+    },
     tests: ['test/b.test.mjs'],
   });
 
@@ -120,6 +180,7 @@ test('mtime selection returns the same normalized targeted outcome', () => {
   }), {
     kind: 'selected',
     messages: [],
+    reasons: {},
     tests: [],
   });
 
@@ -134,6 +195,9 @@ test('mtime selection returns the same normalized targeted outcome', () => {
   }), {
     kind: 'selected',
     messages: [],
+    reasons: {
+      'test/b.test.mjs': [{ kind: 'unrecorded-test' }],
+    },
     tests: ['test/b.test.mjs'],
   });
 });

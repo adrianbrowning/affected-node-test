@@ -4,6 +4,8 @@ This plan turns the current production-ready selection engine into a tool that i
 
 ## DX-1: installation and first success
 
+Status: complete.
+
 User story: a new user can install the package and complete an affected run in under five minutes.
 
 - Choose and consistently apply the final package identity (`affected-node-test` is the current repository and binary name).
@@ -19,6 +21,8 @@ Acceptance criteria:
 
 ## DX-2: useful help and version output
 
+Status: complete.
+
 User story: a user can discover commands and options without opening the README.
 
 - Add descriptive top-level help, command-specific help, examples, option defaults, and `--version`.
@@ -33,6 +37,8 @@ Acceptance criteria:
 
 ## DX-3: doctor and configuration schema
 
+Status: complete.
+
 User story: a user can validate discovery and configuration without executing tests.
 
 - Add a read-only `doctor` command for Node compatibility, project root, discovered tests, workspace projects, cache status, Git availability, and resolved configured files.
@@ -46,6 +52,12 @@ Acceptance criteria:
 - Valid configuration receives editor completion and invalid configuration produces focused diagnostics.
 
 ## DX-4: explain and preview selection
+
+Status: in progress.
+
+- [x] Add structured selection and fallback reasons without changing execution output.
+- [ ] Add read-only preview to finite single-project commands.
+- [ ] Add workspace preview parity.
 
 User story: a user can see what would run and why without running tests or changing the cache.
 

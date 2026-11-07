@@ -1,5 +1,18 @@
-import { dependenciesForTest } from './dependency-graph.mjs';
+import { dependencyPathForTest } from './dependency-graph.mjs';
 import { matchesPatterns } from './project-config.mjs';
+
+function reasonCollector() {
+  const collected = new Map();
+  return {
+    add(test, reason) {
+      if (!collected.has(test)) collected.set(test, []);
+      collected.get(test).push(reason);
+    },
+    forTests(tests) {
+      return Object.fromEntries([...tests].sort().map((test) => [test, collected.get(test) ?? []]));
+    },
+  };
+}
 
 export async function executeSelectionRun({
   baseline,
@@ -49,29 +62,60 @@ async function executeSelection({
 }
 
 export function selectTestsSinceLastRun({ dependencyStateChanged, record, tests }) {
-  const selected = new Set(record.failedTests);
+  const selected = new Set();
+  const reasons = reasonCollector();
+  for (const test of record.failedTests) {
+    selected.add(test);
+    reasons.add(test, { kind: 'previous-failure' });
+  }
   for (const test of tests) {
     const state = record.dependencyStates[test];
-    if (!state || dependencyStateChanged(state)) selected.add(test);
+    if (!state) {
+      selected.add(test);
+      reasons.add(test, { kind: 'unrecorded-test' });
+    } else if (dependencyStateChanged(state)) {
+      selected.add(test);
+      reasons.add(test, { kind: 'dependency-state-change' });
+    }
   }
-  return { kind: 'selected', messages: [], tests: [...selected].sort() };
+  return {
+    kind: 'selected',
+    messages: [],
+    reasons: reasons.forTests(selected),
+    tests: [...selected].sort(),
+  };
 }
 
 export function selectTestsForFiles({ config, files, record, tests }) {
-  const forcedChange = files.find((path) => matchesPatterns(path, config.forceRerunTriggers));
-  if (forcedChange) {
+  for (const file of files) {
+    const pattern = config.forceRerunTriggers.find((candidate) => matchesPatterns(file, [candidate]));
+    if (!pattern) continue;
     return {
       kind: 'baseline',
-      message: `Force-rerun trigger matched: ${forcedChange}; running full suite.`,
+      message: `Force-rerun trigger matched: ${file}; running full suite.`,
+      reason: { file, kind: 'force-rerun-trigger', pattern },
     };
   }
-  if (files.some((path) => /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|node_modules\/|tsconfig[^/]*\.json|\.npmrc|\.node-version|\.nvmrc)$/.test(path))) {
-    return { kind: 'baseline', message: 'Project configuration changed; running full suite.' };
+  const configurationFiles = files.filter((path) => /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|node_modules\/|tsconfig[^/]*\.json|\.npmrc|\.node-version|\.nvmrc)$/.test(path));
+  if (configurationFiles.length) {
+    return {
+      kind: 'baseline',
+      message: 'Project configuration changed; running full suite.',
+      reason: { files: configurationFiles, kind: 'project-configuration' },
+    };
   }
 
-  const selected = new Set(record.failedTests);
+  const selected = new Set();
+  const reasons = reasonCollector();
+  for (const test of record.failedTests) {
+    selected.add(test);
+    reasons.add(test, { kind: 'previous-failure' });
+  }
   for (const test of tests) {
-    if (!Object.hasOwn(record.dependencyStates, test)) selected.add(test);
+    if (!Object.hasOwn(record.dependencyStates, test)) {
+      selected.add(test);
+      reasons.add(test, { kind: 'unrecorded-test' });
+    }
   }
   const known = new Set(tests);
   for (const test of tests) {
@@ -86,10 +130,15 @@ export function selectTestsForFiles({ config, files, record, tests }) {
     return {
       kind: 'baseline',
       message: `Unknown code file changed (${unknownCode.join(', ')}); running full suite.`,
+      reason: { files: unknownCode, kind: 'unknown-code' },
     };
   }
-  if (files.some(codeChange)) {
-    for (const test of record.unresolvedStaticTests) selected.add(test);
+  const changedCodeFiles = files.filter(codeChange);
+  if (changedCodeFiles.length) {
+    for (const test of record.unresolvedStaticTests) {
+      selected.add(test);
+      reasons.add(test, { files: changedCodeFiles, kind: 'unresolved-static' });
+    }
   }
 
   const messages = [];
@@ -104,10 +153,17 @@ export function selectTestsForFiles({ config, files, record, tests }) {
         return {
           kind: 'baseline',
           message: `Watch trigger matched ${file} but selected no tests; running full suite.`,
+          reason: {
+            file,
+            kind: 'watch-trigger-empty',
+            pattern: mapping.pattern,
+            testPatterns: mapping.tests,
+          },
         };
       }
       for (const test of mappedTests) {
         selected.add(test);
+        reasons.add(test, { file, kind: 'watch-trigger', pattern: mapping.pattern });
         watchTriggeredTests.add(test);
       }
     }
@@ -116,7 +172,17 @@ export function selectTestsForFiles({ config, files, record, tests }) {
     messages.push(`Watch trigger matched ${[...watchTriggeredChanges].join(', ')}; selected ${watchTriggeredTests.size} mapped test file(s).`);
   }
   for (const test of tests) {
-    if (files.some((file) => dependenciesForTest(record.graph[test] ?? [], test).has(file))) selected.add(test);
+    for (const file of files) {
+      const path = dependencyPathForTest(record.graph[test] ?? [], test, file);
+      if (!path) continue;
+      selected.add(test);
+      reasons.add(test, { file, kind: 'dependency', path });
+    }
   }
-  return { kind: 'selected', messages, tests: [...selected].sort() };
+  return {
+    kind: 'selected',
+    messages,
+    reasons: reasons.forTests(selected),
+    tests: [...selected].sort(),
+  };
 }
