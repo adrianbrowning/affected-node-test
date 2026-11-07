@@ -5,8 +5,8 @@ import { registerHooks } from 'node:module';
 import { resolve, relative, join, sep, isAbsolute } from 'node:path';
 import { availableParallelism, tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { writeJsonAtomically } from '../src/cache.mjs';
 import { configurationFingerprint } from '../src/config.mjs';
+import { loadDependencyRecord, writeDependencyRecord } from '../src/dependency-record.mjs';
 import { buildStaticGraph } from '../src/static-graph.mjs';
 import { runWorkspace } from '../src/workspace.mjs';
 import { sendWatchReady } from '../src/watch-protocol.mjs';
@@ -348,8 +348,7 @@ function save(tests, graph, failedTests = [], dependencyStates = {}, unresolvedS
   const resolvedSetupFiles = [...setupFiles].sort();
   const resolvedGlobalSetupFiles = [...globalSetupFiles].sort();
   // Dependency graphs are complete snapshots; failed runs only update status metadata.
-  writeJsonAtomically(cachePath, {
-    version: 10,
+  writeDependencyRecord(cachePath, {
     node: process.versions.node,
     config: configurationFingerprint(root),
     projectDependencies: configuredProjectDependencyFingerprint(),
@@ -369,36 +368,6 @@ function save(tests, graph, failedTests = [], dependencyStates = {}, unresolvedS
     dependencyStates,
     unresolvedStaticTests: [...unresolvedStaticTests].sort(),
   });
-}
-function isValidCache(saved) {
-  if (!saved || typeof saved !== 'object' || Array.isArray(saved) ||
-      typeof saved.config !== 'string' || !Array.isArray(saved.tests) ||
-      typeof saved.projectDependencies !== 'string' ||
-      !Array.isArray(saved.setupDependencyFiles) || typeof saved.setupDependencies !== 'string' ||
-      !Array.isArray(saved.setupFiles) ||
-      !Array.isArray(saved.globalSetupDependencyFiles) || typeof saved.globalSetupDependencies !== 'string' ||
-      !Array.isArray(saved.globalSetupFiles) ||
-      !Array.isArray(saved.environmentFiles) || typeof saved.environment !== 'string' ||
-      !Array.isArray(saved.conventionDependencyFiles) || typeof saved.conventionDependencies !== 'string' ||
-      !saved.dependencyStates || typeof saved.dependencyStates !== 'object' || Array.isArray(saved.dependencyStates) ||
-      !Array.isArray(saved.failedTests) ||
-      !Array.isArray(saved.unresolvedStaticTests) ||
-      !saved.graph || typeof saved.graph !== 'object' || Array.isArray(saved.graph)) {
-    return false;
-  }
-  const testSet = new Set(saved.tests);
-  return saved.setupDependencyFiles.every((path) => typeof path === 'string') &&
-    saved.setupFiles.every((path) => typeof path === 'string') &&
-    saved.globalSetupDependencyFiles.every((path) => typeof path === 'string') &&
-    saved.globalSetupFiles.every((path) => typeof path === 'string') &&
-    saved.environmentFiles.every((path) => typeof path === 'string') &&
-    saved.conventionDependencyFiles.every((path) => typeof path === 'string') &&
-    Object.values(saved.dependencyStates).every((state) => state && typeof state === 'object' && !Array.isArray(state)) &&
-    saved.failedTests.every((test) => typeof test === 'string' && testSet.has(test)) &&
-    saved.unresolvedStaticTests.every((test) => typeof test === 'string' && testSet.has(test)) &&
-    saved.tests.every((test) => typeof test === 'string' &&
-    Array.isArray(saved.graph[test]) && saved.graph[test].every((edge) =>
-      Array.isArray(edge) && edge.length === 2 && edge.every((part) => typeof part === 'string')));
 }
 function finishRun(tests, result, previous) {
   const { completedTests, failedTests, resultGraph, interrupted, unresolvedStaticTests = [] } = result;
@@ -465,40 +434,22 @@ function dependencies(edges, test) {
   return visited;
 }
 function loadUsableCache(tests) {
-  let saved;
-  try { saved = JSON.parse(readFileSync(cachePath, 'utf8')); } catch {
-    console.log('No graph cache; running full suite.'); return;
+  const loaded = loadDependencyRecord(cachePath, {
+    config: configurationFingerprint(root),
+    conventionDependencyFiles,
+    environmentFiles: [...envFiles].sort(),
+    globalSetupFiles: [...globalSetupFiles].sort(),
+    node: process.versions.node,
+    projectDependencies: configuredProjectDependencyFingerprint(),
+    root,
+    setupFiles: [...setupFiles].sort(),
+    tests,
+  });
+  if (loaded.reason) {
+    console.log(loaded.reason);
+    return;
   }
-  if (!isValidCache(saved)) {
-    console.log('Invalid graph cache; running full suite.'); return;
-  }
-  if (saved.version !== 10 || saved.node !== process.versions.node ||
-      JSON.stringify(saved.tests) !== JSON.stringify(tests)) {
-    console.log('Test files or runtime changed; running full suite.'); return;
-  }
-  if (saved.config !== configurationFingerprint(root)) {
-    console.log('Project configuration changed since graph was built; running full suite.'); return;
-  }
-  if (saved.projectDependencies !== configuredProjectDependencyFingerprint()) {
-    console.log('Project dependencies changed since graph was built; running full suite.'); return;
-  }
-  if (JSON.stringify(saved.environmentFiles) !== JSON.stringify([...envFiles].sort()) ||
-      saved.environment !== repositoryFilesFingerprint(root, saved.environmentFiles)) {
-    console.log('Environment files changed since graph was built; running full suite.'); return;
-  }
-  if (JSON.stringify(saved.conventionDependencyFiles) !== JSON.stringify(conventionDependencyFiles) ||
-      saved.conventionDependencies !== repositoryFilesFingerprint(root, saved.conventionDependencyFiles)) {
-    console.log('Convention dependencies changed since graph was built; running full suite.'); return;
-  }
-  if (JSON.stringify(saved.setupFiles) !== JSON.stringify([...setupFiles].sort()) ||
-      saved.setupDependencies !== repositoryFilesFingerprint(root, saved.setupDependencyFiles)) {
-    console.log('Setup dependencies changed since graph was built; running full suite.'); return;
-  }
-  if (JSON.stringify(saved.globalSetupFiles) !== JSON.stringify([...globalSetupFiles].sort()) ||
-      saved.globalSetupDependencies !== repositoryFilesFingerprint(root, saved.globalSetupDependencyFiles)) {
-    console.log('Global setup dependencies changed since graph was built; running full suite.'); return;
-  }
-  return saved;
+  return loaded.record;
 }
 function dependencyStateChanged(state) {
   for (const [path, previous] of Object.entries(state)) {
