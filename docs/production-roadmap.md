@@ -46,7 +46,8 @@ This roadmap targets parity with Vitest's affected-test selection subsystem, not
 - [ ] Add multiple project/package roots with isolated caches and triggers
   - [x] Validate workspace project roots and run deterministic baselines
   - [x] Isolate project discovery, configuration, caches, and cache clearing
-  - [ ] Route Git and explicit related-file selection to owning projects
+  - [x] Route explicit related-file selection to owning projects
+  - [ ] Route Git affected selection to owning projects
   - [ ] Coordinate persistent watch mode across projects
 - [ ] Support configurable discovery and decide the TypeScript/JSX loader contract
 

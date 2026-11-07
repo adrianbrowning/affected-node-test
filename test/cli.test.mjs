@@ -373,6 +373,22 @@ test('workspace baseline runs configured projects with isolated caches', () => {
   }
 });
 
+test('workspace related routes files only to their owning project', () => {
+  const cwd = makeWorkspace();
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+
+    const related = run(cwd, 'related', 'packages/a/src/value.mjs');
+    assert.equal(related.status, 0, related.stderr);
+    assert.match(related.stdout, /Project packages\/a/);
+    assert.doesNotMatch(related.stdout, /Project packages\/b/);
+    assert.match(related.stdout, /Related files: src\/value\.mjs/);
+    assert.match(related.stdout, /Selected 1\/1 related test file\(s\)/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('a structurally invalid cache falls back to the full suite', () => {
   const cwd = makeRepository();
   try {
