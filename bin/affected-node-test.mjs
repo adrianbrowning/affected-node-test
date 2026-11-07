@@ -19,6 +19,7 @@ import {
   selectTestsSinceLastRun,
 } from '../src/selection-run.mjs';
 import { renderSelectionPreview } from '../src/selection-preview.mjs';
+import { createSelectionPreviewDocument } from '../src/selection-document.mjs';
 import { runWorkspace } from '../src/workspace.mjs';
 import { sendWatchReady } from '../src/watch-protocol.mjs';
 import { discoverTestFiles } from '../src/test-discovery.mjs';
@@ -56,6 +57,7 @@ if (args.includes('--help') || args.includes('-h')) {
 function parseArguments(values) {
   const positionals = [];
   let dryRun = false;
+  let output = 'human';
   let concurrency = Math.max(1, Math.min(4, availableParallelism()));
   for (let index = 0; index < values.length; index += 1) {
     if (values[index] === '--concurrency') {
@@ -70,15 +72,23 @@ function parseArguments(values) {
         failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
       }
       dryRun = true;
+    } else if (values[index] === '--output=json') {
+      if (!['baseline', 'affected', 'related', 'since-last-run'].includes(command)) {
+        failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
+      }
+      output = 'json';
     } else if (values[index].startsWith('-')) {
       failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
     } else {
       positionals.push(values[index]);
     }
   }
-  return { concurrency, dryRun, positionals };
+  return { concurrency, dryRun, output, positionals };
 }
 const options = parseArguments(args);
+if (options.output === 'json' && !options.dryRun) {
+  failUsage('--output=json currently requires --dry-run.', commandHelp(command));
+}
 if (command === 'related' && !options.positionals.length) {
   failUsage('related requires at least one FILE.', commandHelp(command));
 }
@@ -132,6 +142,9 @@ if (command === 'doctor') {
   }
 }
 if (projectConfig.projects.length) {
+  if (options.output === 'json') {
+    fail('Workspace JSON output is not supported yet.');
+  }
   try {
     const status = await runWorkspace({
       root,
@@ -422,6 +435,10 @@ function finishRun(tests, result, previous) {
 async function baseline(previous, selection) {
   const tests = discover();
   if (options.dryRun) {
+    if (options.output === 'json') {
+      printSelectionDocument(tests, selection);
+      return;
+    }
     for (const line of renderSelectionPreview({ allTests: tests, selection })) console.log(line);
     return;
   }
@@ -431,8 +448,15 @@ async function baseline(previous, selection) {
 async function executeSelectionOutcome(tests, prepare) {
   await executeSelectionRun({
     baseline,
+    empty: options.output === 'json'
+      ? (_saved, selection) => printSelectionDocument(tests, selection)
+      : undefined,
     execute: async (selectedTests, saved, selection, details) => {
       if (options.dryRun) {
+        if (options.output === 'json') {
+          printSelectionDocument(tests, selection);
+          return;
+        }
         for (const line of renderSelectionPreview({
           allTests: tests,
           selectedLabel: details.selectedLabel,
@@ -443,10 +467,20 @@ async function executeSelectionOutcome(tests, prepare) {
       finishRun(tests, await runTests(selectedTests, saved.graph, saved.durations), saved);
     },
     loadRecord: () => loadUsableCache(tests),
-    log: console.log,
+    log: options.output === 'json' ? console.error : console.log,
     prepare: (saved) => ({ ...prepare(saved), announceSelected: !options.dryRun }),
     totalTests: tests.length,
   });
+}
+let cacheFallback;
+function printSelectionDocument(tests, selection) {
+  console.log(JSON.stringify(createSelectionPreviewDocument({
+    allTests: tests,
+    cacheFallback,
+    command,
+    projectRoot: root,
+    selection,
+  }), null, 2));
 }
 function clearCache() {
   rmSync(cachePath, { force: true });
@@ -474,7 +508,8 @@ function loadUsableCache(tests) {
     tests,
   });
   if (loaded.reason) {
-    console.log(loaded.reason);
+    cacheFallback = { kind: 'cache-unavailable', message: loaded.reason };
+    (options.output === 'json' ? console.error : console.log)(loaded.reason);
     return;
   }
   return loaded.record;

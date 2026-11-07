@@ -505,6 +505,92 @@ test('dry-run previews finite selections and fallbacks without workers or cache 
   }
 });
 
+test('JSON dry-run emits one versioned selection document without workers or cache writes', () => {
+  const cwd = makeRepository();
+  const marker = join(cwd, 'worker-ran');
+  const testPath = join(cwd, 'test', 'value.test.mjs');
+  writeFileSync(testPath, [
+    "import { writeFileSync } from 'node:fs';",
+    `writeFileSync(${JSON.stringify(marker)}, 'ran');`,
+    readFileSync(testPath, 'utf8'),
+  ].join('\n'));
+  git(cwd, 'add', 'test/value.test.mjs');
+  git(cwd, 'commit', '-qm', 'add worker marker');
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+    rmSync(marker);
+    const cachePath = join(cwd, '.affected-tests', 'graph.json');
+    const cacheBefore = readFileSync(cachePath, 'utf8');
+    writeFileSync(join(cwd, 'src', 'value.mjs'), 'export const value = 2;\n');
+
+    const human = run(cwd, 'affected', '--dry-run');
+    const affected = run(cwd, 'affected', '--dry-run', '--output=json');
+    assert.equal(affected.status, 0, affected.stderr);
+    const selected = JSON.parse(affected.stdout);
+    assert.deepEqual(selected, {
+      schemaVersion: 1,
+      mode: 'preview',
+      command: 'affected',
+      provider: 'git',
+      projectRoot: cwd,
+      outcome: 'selected',
+      tests: ['test/value.test.mjs'],
+      totalTests: 1,
+      reasons: {
+        'test/value.test.mjs': [{
+          file: 'src/value.mjs',
+          kind: 'dependency',
+          path: ['test/value.test.mjs', 'src/value.mjs'],
+        }],
+      },
+      fallback: null,
+    });
+    assert.ok(selected.tests.every((path) => human.stdout.includes(path)));
+    assert.match(affected.stderr, /Changed files: src\/value\.mjs/);
+    assert.doesNotMatch(affected.stdout, /Dry run|Changed files|▶/);
+    assert.equal(existsSync(marker), false);
+    assert.equal(readFileSync(cachePath, 'utf8'), cacheBefore);
+
+    const related = run(cwd, 'related', 'src/value.mjs', '--dry-run', '--output=json');
+    assert.equal(related.status, 0, related.stderr);
+    assert.equal(JSON.parse(related.stdout).provider, 'explicit-files');
+
+    const sinceLastRun = run(cwd, 'since-last-run', '--dry-run', '--output=json');
+    assert.equal(sinceLastRun.status, 0, sinceLastRun.stderr);
+    assert.equal(JSON.parse(sinceLastRun.stdout).provider, 'filesystem');
+
+    writeFileSync(join(cwd, 'src', 'value.mjs'), 'export const value = 1;\n');
+    const noOp = run(cwd, 'affected', '--dry-run', '--output=json');
+    assert.equal(noOp.status, 0, noOp.stderr);
+    assert.deepEqual(JSON.parse(noOp.stdout).tests, []);
+    assert.equal(JSON.parse(noOp.stdout).outcome, 'no-tests');
+
+    writeFileSync(join(cwd, 'src', 'new.mjs'), 'export const added = true;\n');
+    const fallback = run(cwd, 'affected', '--dry-run', '--output=json');
+    assert.equal(fallback.status, 0, fallback.stderr);
+    assert.deepEqual(JSON.parse(fallback.stdout).fallback, {
+      files: ['src/new.mjs'],
+      kind: 'unknown-code',
+    });
+    assert.equal(JSON.parse(fallback.stdout).outcome, 'full-suite');
+
+    rmSync(join(cwd, '.affected-tests'), { recursive: true, force: true });
+    const cacheMiss = run(cwd, 'affected', '--dry-run', '--output=json');
+    assert.equal(cacheMiss.status, 0, cacheMiss.stderr);
+    assert.equal(JSON.parse(cacheMiss.stdout).fallback.kind, 'cache-unavailable');
+    assert.match(cacheMiss.stderr, /No graph cache; running full suite\./);
+    assert.equal(existsSync(join(cwd, '.affected-tests')), false);
+    assert.equal(existsSync(marker), false);
+
+    const baseline = run(cwd, 'baseline', '--dry-run', '--output=json');
+    assert.equal(baseline.status, 0, baseline.stderr);
+    assert.equal(JSON.parse(baseline.stdout).provider, 'baseline');
+    assert.equal(JSON.parse(baseline.stdout).outcome, 'full-suite');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('dry-run explains sticky failures without rerunning them', () => {
   const cwd = makeRepository();
   const testPath = join(cwd, 'test', 'value.test.mjs');

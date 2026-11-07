@@ -71,6 +71,7 @@ pnpm exec affected-node-test doctor
 - `related FILE...` requires no Git repository and runs tests related to explicit repository-relative or absolute paths. It shares the same conservative triggers and mappings as `affected`.
 - `since-last-run` requires no Git repository. It compares each test's recorded dependency metadata with the filesystem, reruns changed, unrecorded, and previously failing tests, and updates successful records incrementally.
 - `--dry-run` previews `baseline`, `affected`, `related`, or `since-last-run` selections and their reasons without launching test workers or updating the graph cache. Workspace previews preserve project routing and identify workspace-wide fallbacks.
+- Add `--output=json` to a single-project `--dry-run` command for one versioned, machine-readable selection document. Informational diagnostics are written to stderr so stdout remains parseable JSON. Workspace JSON aggregation is not yet supported.
 - `watch` performs an initial full run, then persistently watches the project and serially reruns only tests selected by the same dependency graph, conservative triggers, and non-module mappings.
 - `clear-cache` removes the saved dependency graph and is safe to run when no cache exists.
 - The graph cache is tied to the exact Node version, `NODE_OPTIONS`, package manifests, lockfiles, npm configuration, Node version files, and TypeScript configuration files.

@@ -16,6 +16,7 @@ function reasonCollector() {
 
 export async function executeSelectionRun({
   baseline,
+  empty,
   execute,
   loadRecord,
   log,
@@ -30,6 +31,7 @@ export async function executeSelectionRun({
   await executeSelection({
     ...prepare(record),
     baseline: (selection) => baseline(record, selection),
+    empty: (selection, details) => empty?.(record, selection, details),
     execute: (selectedTests, selection, details) => execute(selectedTests, record, selection, details),
     log,
     totalTests,
@@ -40,6 +42,7 @@ async function executeSelection({
   baseline,
   announceSelected = true,
   contextMessages = [],
+  empty,
   emptyMessage,
   execute,
   log,
@@ -56,6 +59,7 @@ async function executeSelection({
   for (const message of contextMessages) log(message);
   if (!selection.tests.length) {
     log(emptyMessage);
+    await empty?.(selection, { selectedLabel });
     return;
   }
   if (announceSelected) log(`Selected ${selection.tests.length}/${totalTests} ${selectedLabel}`);
