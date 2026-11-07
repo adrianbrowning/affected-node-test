@@ -51,6 +51,30 @@ This roadmap targets parity with Vitest's affected-test selection subsystem, not
   - [x] Coordinate persistent watch mode across projects
 - [x] Support configurable discovery and define the TypeScript/JSX loader contract
 
+## Architecture hardening
+
+These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior with integration tests while changing module ownership. Suggested order: workspace lifecycle, dependency records, Git changes, then selection/run consolidation.
+
+- [ ] Deepen workspace orchestration (**strong recommendation**)
+  - [ ] Replace parsing the child text `Watching for changes.` with a structured readiness and lifecycle protocol
+  - [ ] Move abort, shutdown, sibling-failure, and exit-code policy behind the workspace module interface
+  - [ ] Keep finite-run and persistent-watch process adapters internal to one workspace module
+  - [ ] Exercise readiness, failure, and shutdown through the same command-facing interface
+- [ ] Deepen the dependency-record lifecycle (**strong recommendation**)
+  - [ ] Move schema version, structural validation, compatibility, and invalidation reasons out of the CLI module
+  - [ ] Give the record module a small interface for load decisions, successful updates, and failure preservation
+  - [ ] Keep atomic filesystem replacement as an implementation detail; do not introduce a hypothetical storage-adapter seam
+  - [ ] Lock corrupt, stale, interrupted, failed, sticky-failure, and incremental-success behavior with focused tests
+- [ ] Concentrate Git change knowledge (**worth scheduling**)
+  - [ ] Give project and workspace callers one interface for root validation, merge-base selection, diffs, untracked files, and exclusions
+  - [ ] Centralize Git subprocess errors and no-merge-base outcomes
+  - [ ] Replace duplicated project/workspace Git rules without changing affected-selection output
+- [ ] Collapse the selection-and-run protocol (**exploratory refactor after the preceding tasks**)
+  - [ ] Feed Git, explicit-file, and mtime providers into one normalized selection outcome
+  - [ ] Centralize cache loading, conservative fallback, targeted execution, messages, and record updates
+  - [ ] Keep provider adapters at the real seam while hiding safety sequencing inside the module
+  - [ ] Prove `affected`, `related`, `since-last-run`, and watch retain their current behavior through command-level tests
+
 ## P2: efficiency and ergonomics
 
 - [ ] Run only new or unrecorded tests when inventory grows
