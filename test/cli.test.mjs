@@ -883,6 +883,62 @@ test('workspace dry-run preserves project routing, fallbacks, and cache state', 
   }
 });
 
+test('workspace JSON aggregates routing and project results for finite commands', () => {
+  const cwd = makeWorkspace();
+  try {
+    const baseline = run(cwd, 'baseline', '--output=json');
+    assert.equal(baseline.status, 0, baseline.stderr);
+    const baselineDocument = JSON.parse(baseline.stdout);
+    assert.equal(baselineDocument.schemaVersion, 1);
+    assert.equal(baselineDocument.mode, 'run');
+    assert.equal(baselineDocument.command, 'baseline');
+    assert.equal(baselineDocument.workspaceRoot, cwd);
+    assert.equal(baselineDocument.outcome, 'passed');
+    assert.equal(baselineDocument.exitCode, 0);
+    assert.deepEqual(baselineDocument.projects.map(({ path }) => path), ['packages/a', 'packages/b']);
+
+    const noOp = run(cwd, 'affected', '--output=json');
+    assert.equal(noOp.status, 0, noOp.stderr);
+    assert.equal(JSON.parse(noOp.stdout).routing.kind, 'no-changes');
+    assert.equal(JSON.parse(noOp.stdout).outcome, 'passed');
+
+    writeFileSync(join(cwd, 'packages', 'a', 'src', 'value.mjs'), 'export const value = 1; // changed\n');
+    const selected = run(cwd, 'affected', '--output=json');
+    assert.equal(selected.status, 0, selected.stderr);
+    const selectedDocument = JSON.parse(selected.stdout);
+    assert.deepEqual(selectedDocument.routing, {
+      kind: 'project-files',
+      files: ['packages/a/src/value.mjs'],
+    });
+    const projectA = selectedDocument.projects.find(({ path }) => path === 'packages/a');
+    assert.deepEqual(projectA.result.execution.tests, ['test/value.test.mjs']);
+    assert.deepEqual(projectA.result.execution.failures, []);
+
+    const failingTest = join(cwd, 'packages', 'b', 'test', 'value.test.mjs');
+    writeFileSync(failingTest, `${readFileSync(failingTest, 'utf8')}\nthrow new Error('workspace json failure');\n`);
+    const failing = run(cwd, 'affected', '--output=json');
+    assert.equal(failing.status, 1);
+    assert.equal(JSON.parse(failing.stdout).outcome, 'failed');
+    assert.equal(JSON.parse(failing.stdout).exitCode, 1);
+    assert.match(failing.stderr, /workspace json failure/);
+
+    git(cwd, 'checkout', '--', 'packages/b/test/value.test.mjs');
+    writeFileSync(join(cwd, 'README.md'), 'workspace change\n');
+    const fallback = run(cwd, 'affected', '--dry-run', '--output=json');
+    assert.equal(fallback.status, 0, fallback.stderr);
+    const fallbackDocument = JSON.parse(fallback.stdout);
+    assert.deepEqual(fallbackDocument.routing, {
+      kind: 'workspace-fallback',
+      file: 'README.md',
+      reason: 'workspace-level-change',
+    });
+    assert.equal(fallbackDocument.mode, 'preview');
+    assert.deepEqual(fallbackDocument.projects.map(({ path }) => path), ['packages/a', 'packages/b']);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('watch emits structured readiness over IPC', { timeout: 30_000 }, async () => {
   const cwd = makeRepository();
   const env = { ...process.env };

@@ -3,6 +3,7 @@ import { statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { loadProjectConfig } from './project-config.mjs';
 import { getGitChanges } from './git-changes.mjs';
+import { selectionProvider } from './selection-document.mjs';
 import { watchReadyMessageType } from './watch-protocol.mjs';
 
 const normal = (path) => path.split(sep).join('/');
@@ -14,7 +15,7 @@ function splitCommandArgs(args) {
     if (args[index] === '--concurrency') {
       forwardedOptions.push(args[index], args[index + 1]);
       index += 1;
-    } else if (args[index] === '--dry-run') {
+    } else if (args[index] === '--dry-run' || args[index] === '--output=json') {
       forwardedOptions.push(args[index]);
     } else {
       positionals.push(args[index]);
@@ -156,6 +157,9 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
   }
 
   const resolvedProjects = resolveWorkspaceProjects({ root, projects });
+  const jsonOutput = args.includes('--output=json');
+  const log = jsonOutput ? console.error : console.log;
+  let routing = { kind: 'all-projects' };
 
   if (command === 'watch') {
     const { forwardedOptions, positionals } = splitCommandArgs(args);
@@ -186,13 +190,15 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
     }
 
     if (workspaceLevelFile) {
-      console.log(`Workspace-level related file ${workspaceLevelFile}; ${baselineVerb(forwardedOptions)} every project baseline.`);
+      log(`Workspace-level related file ${workspaceLevelFile}; ${baselineVerb(forwardedOptions)} every project baseline.`);
+      routing = { file: workspaceLevelFile, kind: 'workspace-fallback', reason: 'workspace-level-file' };
       projectRuns = resolvedProjects.map((project) => ({
         project,
         command: 'baseline',
         args: forwardedOptions,
       }));
     } else {
+      routing = { files: files.map(normal).sort(), kind: 'project-files' };
       projectRuns = resolvedProjects
         .filter((project) => groupedFiles.get(project.path).length)
         .map((project) => ({
@@ -221,11 +227,15 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
       root,
     });
     if (changed.noMergeBase) {
-      console.log(`No merge base with ${ref}; ${baselineVerb(forwardedOptions)} every project baseline.`);
+      log(`No merge base with ${ref}; ${baselineVerb(forwardedOptions)} every project baseline.`);
+      routing = { kind: 'workspace-fallback', reason: 'no-merge-base', ref };
       projectRuns = resolvedProjects.map((project) => ({ project, command: 'baseline', args: forwardedOptions }));
     } else {
       const changes = changed.files;
-      if (changes.length) console.log(`Changed files: ${changes.join(', ')}`);
+      routing = changes.length
+        ? { files: changes, kind: 'project-files' }
+        : { kind: 'no-changes' };
+      if (changes.length) log(`Changed files: ${changes.join(', ')}`);
       const groupedFiles = new Map(resolvedProjects.map((project) => [project.path, []]));
       const workspaceLevelChange = changes.find((workspacePath) => {
         const owner = ownerOf(resolvedProjects, workspacePath);
@@ -234,7 +244,8 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
         return false;
       });
       if (workspaceLevelChange) {
-        console.log(`Workspace-level change ${workspaceLevelChange}; ${baselineVerb(forwardedOptions)} every project baseline.`);
+        log(`Workspace-level change ${workspaceLevelChange}; ${baselineVerb(forwardedOptions)} every project baseline.`);
+        routing = { file: workspaceLevelChange, kind: 'workspace-fallback', reason: 'workspace-level-change' };
         projectRuns = resolvedProjects.map((project) => ({ project, command: 'baseline', args: forwardedOptions }));
       } else {
         projectRuns = resolvedProjects.map((project) => groupedFiles.get(project.path).length
@@ -251,6 +262,7 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
 
   let exitCode = 0;
   let displayedProjects = 0;
+  const projectDocuments = [];
   for (const { project, command: projectCommand, args: projectArgs, suppressNoop = false } of projectRuns) {
     const result = spawnSync(process.execPath, [cliPath, projectCommand, ...projectArgs], {
       cwd: project.root,
@@ -258,15 +270,39 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
       env: process.env,
     });
     if (result.error) throw result.error;
-    const noOp = suppressNoop && result.status === 0 && !result.stderr &&
+    const noOp = !jsonOutput && suppressNoop && result.status === 0 && !result.stderr &&
       result.stdout.trim() === 'No tests changed since last run.';
     if (noOp) continue;
     displayedProjects += 1;
-    console.log(`\nProject ${project.path}`);
-    if (result.stdout) process.stdout.write(result.stdout);
+    if (jsonOutput) {
+      let projectDocument;
+      try {
+        projectDocument = JSON.parse(result.stdout);
+      } catch {
+        throw new Error(`Project ${project.path} did not produce valid JSON output.`);
+      }
+      projectDocuments.push({ path: project.path, result: projectDocument });
+    } else {
+      console.log(`\nProject ${project.path}`);
+      if (result.stdout) process.stdout.write(result.stdout);
+    }
     if (result.stderr) process.stderr.write(result.stderr);
     if (result.status !== 0) exitCode = 1;
   }
-  if (printNoChangedFiles && !displayedProjects) console.log('No changed files.');
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      schemaVersion: 1,
+      mode: args.includes('--dry-run') ? 'preview' : 'run',
+      command,
+      provider: selectionProvider(command),
+      workspaceRoot: root,
+      outcome: exitCode ? 'failed' : 'passed',
+      exitCode,
+      routing,
+      projects: projectDocuments,
+    }, null, 2));
+  } else if (printNoChangedFiles && !displayedProjects) {
+    console.log('No changed files.');
+  }
   return exitCode;
 }

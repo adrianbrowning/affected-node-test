@@ -5,6 +5,10 @@ const providers = Object.freeze({
   'since-last-run': 'filesystem',
 });
 
+export function selectionProvider(command) {
+  return providers[command];
+}
+
 function createSelectionDocument({
   allTests,
   cacheFallback,
@@ -20,7 +24,7 @@ function createSelectionDocument({
     schemaVersion: 1,
     mode,
     command,
-    provider: providers[command],
+    provider: selectionProvider(command),
     projectRoot,
     outcome: selected ? (tests.length ? 'selected' : 'no-tests') : 'full-suite',
     tests,

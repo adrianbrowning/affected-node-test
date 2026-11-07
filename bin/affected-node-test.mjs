@@ -142,9 +142,6 @@ if (command === 'doctor') {
   }
 }
 if (projectConfig.projects.length) {
-  if (options.output === 'json') {
-    fail('Workspace JSON output is not supported yet.');
-  }
   try {
     const status = await runWorkspace({
       root,

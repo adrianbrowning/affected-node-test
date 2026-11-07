@@ -73,7 +73,7 @@ Acceptance criteria:
 
 ## DX-5: stable automation output
 
-Status: in progress ([preview JSON #7](https://github.com/adrianbrowning/affected-node-test/issues/7), [finite-run JSON #8](https://github.com/adrianbrowning/affected-node-test/issues/8), [workspace JSON #9](https://github.com/adrianbrowning/affected-node-test/issues/9)).
+Status: complete ([preview JSON #7](https://github.com/adrianbrowning/affected-node-test/issues/7), [finite-run JSON #8](https://github.com/adrianbrowning/affected-node-test/issues/8), [workspace JSON #9](https://github.com/adrianbrowning/affected-node-test/issues/9)).
 
 User story: an editor, hook, or CI job can consume results without parsing prose.
 

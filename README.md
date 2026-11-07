@@ -74,7 +74,7 @@ pnpm exec affected-node-test affected --dry-run --output=json
 - `related FILE...` requires no Git repository and runs tests related to explicit repository-relative or absolute paths. It shares the same conservative triggers and mappings as `affected`.
 - `since-last-run` requires no Git repository. It compares each test's recorded dependency metadata with the filesystem, reruns changed, unrecorded, and previously failing tests, and updates successful records incrementally.
 - `--dry-run` previews `baseline`, `affected`, `related`, or `since-last-run` selections and their reasons without launching test workers or updating the graph cache. Workspace previews preserve project routing and identify workspace-wide fallbacks.
-- Add `--output=json` to a single-project finite command for one versioned, machine-readable execution document, or combine it with `--dry-run` for a selection preview. Informational diagnostics and test output are written to stderr so stdout remains parseable JSON. Workspace JSON aggregation is not yet supported.
+- Add `--output=json` to a finite command for one versioned, machine-readable execution document, or combine it with `--dry-run` for a selection preview. Informational diagnostics and test output are written to stderr so stdout remains parseable JSON. Workspace commands produce one aggregate document with routing decisions and nested project documents.
 - `watch` performs an initial full run, then persistently watches the project and serially reruns only tests selected by the same dependency graph, conservative triggers, and non-module mappings.
 - `clear-cache` removes the saved dependency graph and is safe to run when no cache exists.
 - The graph cache is tied to the exact Node version, `NODE_OPTIONS`, package manifests, lockfiles, npm configuration, Node version files, and TypeScript configuration files.
@@ -101,6 +101,8 @@ JSON documents currently use `schemaVersion: 1`. Every document includes `mode`,
 ```
 
 `execution.status` is `passed`, `failed`, or `interrupted`. The CLI process exit code matches `execution.exitCode`.
+
+Workspace documents use the same schema version and add `workspaceRoot`, aggregate `outcome` and `exitCode`, a structured `routing` decision, and a `projects` array containing each project path and its selection document.
 
 ## Development
 
