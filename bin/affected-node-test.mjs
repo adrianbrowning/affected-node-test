@@ -7,8 +7,10 @@ import { availableParallelism, tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { configurationFingerprint } from '../src/config.mjs';
 import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.mjs';
+import { dependenciesForTest } from '../src/dependency-graph.mjs';
 import { buildStaticGraph } from '../src/static-graph.mjs';
 import { getGitChanges } from '../src/git-changes.mjs';
+import { selectTestsForFiles } from '../src/selection-run.mjs';
 import { runWorkspace } from '../src/workspace.mjs';
 import { sendWatchReady } from '../src/watch-protocol.mjs';
 import {
@@ -322,7 +324,7 @@ function dependencyClosure(graph, roots) {
 }
 function dependencyState(graph, test) {
   const state = {};
-  for (const path of [...dependencies(graph[test] ?? [], test)].sort()) {
+  for (const path of [...dependenciesForTest(graph[test] ?? [], test)].sort()) {
     try {
       const stats = statSync(join(root, path));
       state[path] = { mtimeMs: stats.mtimeMs, size: stats.size };
@@ -393,21 +395,6 @@ function diffFiles(ref) {
   }
   return changes.noMergeBase ? null : changes.files;
 }
-function dependencies(edges, test) {
-  const adjacency = new Map();
-  for (const [parent, child] of edges) {
-    if (!adjacency.has(parent)) adjacency.set(parent, new Set());
-    adjacency.get(parent).add(child);
-  }
-  const visited = new Set([test]);
-  const stack = [test];
-  while (stack.length) {
-    for (const dep of adjacency.get(stack.pop()) ?? []) {
-      if (!visited.has(dep)) { visited.add(dep); stack.push(dep); }
-    }
-  }
-  return visited;
-}
 function loadUsableCache(tests) {
   const loaded = loadDependencyRecord(cachePath, {
     config: configurationFingerprint(root),
@@ -452,51 +439,6 @@ async function sinceLastRun() {
   console.log(`Selected ${selectedTests.length}/${tests.length} test file(s) since last run`);
   finishRun(tests, await runTests(selectedTests, saved.graph), saved);
 }
-function selectForFiles(tests, saved, files) {
-  const forcedChange = files.find((path) => matchesPatterns(path, projectConfig.forceRerunTriggers));
-  if (forcedChange) return { fullRunMessage: `Force-rerun trigger matched: ${forcedChange}; running full suite.` };
-  if (files.some((path) => /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|node_modules\/|tsconfig[^/]*\.json|\.npmrc|\.node-version|\.nvmrc)$/.test(path))) {
-    return { fullRunMessage: 'Project configuration changed; running full suite.' };
-  }
-  const selected = new Set(saved.failedTests);
-  const known = new Set(tests);
-  for (const test of tests) for (const [parent, child] of saved.graph[test] ?? []) {
-    known.add(parent);
-    known.add(child);
-  }
-  const codeChange = (path) => /\.(?:[cm]?[jt]s|[jt]sx)$/.test(path);
-  const unknownCode = files.filter((path) => codeChange(path) && !known.has(path));
-  if (unknownCode.length) {
-    return { fullRunMessage: `Unknown code file changed (${unknownCode.join(', ')}); running full suite.` };
-  }
-  if (files.some(codeChange)) {
-    for (const test of saved.unresolvedStaticTests) selected.add(test);
-  }
-  const messages = [];
-  const watchTriggeredChanges = new Set();
-  const watchTriggeredTests = new Set();
-  for (const mapping of projectConfig.watchTriggerPatterns) {
-    for (const file of files) {
-      if (!matchesPatterns(file, [mapping.pattern])) continue;
-      watchTriggeredChanges.add(file);
-      const mappedTests = tests.filter((test) => matchesPatterns(test, mapping.tests));
-      if (!mappedTests.length) {
-        return { fullRunMessage: `Watch trigger matched ${file} but selected no tests; running full suite.` };
-      }
-      for (const test of mappedTests) {
-        selected.add(test);
-        watchTriggeredTests.add(test);
-      }
-    }
-  }
-  if (watchTriggeredChanges.size) {
-    messages.push(`Watch trigger matched ${[...watchTriggeredChanges].join(', ')}; selected ${watchTriggeredTests.size} mapped test file(s).`);
-  }
-  for (const test of tests) {
-    if (files.some((file) => dependencies(saved.graph[test] ?? [], test).has(file))) selected.add(test);
-  }
-  return { messages, selected };
-}
 async function related(files) {
   if (!files.length) fail('Usage: affected-node-test related <file...> [--concurrency N]');
   const repositoryFiles = [...new Set(files.map((file) => {
@@ -509,14 +451,14 @@ async function related(files) {
   const tests = discover();
   const saved = loadUsableCache(tests);
   if (!saved) return baseline();
-  const selection = selectForFiles(tests, saved, repositoryFiles);
-  if (selection.fullRunMessage) {
-    console.log(selection.fullRunMessage); return baseline();
+  const selection = selectTestsForFiles({ config: projectConfig, files: repositoryFiles, record: saved, tests });
+  if (selection.kind === 'baseline') {
+    console.log(selection.message); return baseline();
   }
   for (const message of selection.messages) console.log(message);
   console.log(`Related files: ${repositoryFiles.join(', ')}`);
-  if (!selection.selected.size) { console.log('No related tests found.'); return; }
-  const selectedTests = [...selection.selected].sort();
+  if (!selection.tests.length) { console.log('No related tests found.'); return; }
+  const selectedTests = selection.tests;
   console.log(`Selected ${selectedTests.length}/${tests.length} related test file(s)`);
   finishRun(tests, await runTests(selectedTests, saved.graph), saved);
 }
@@ -529,15 +471,15 @@ async function affected(ref) {
     console.log(`No merge base with ${ref}; running full suite.`); return baseline();
   }
   if (!changes.length && !saved.failedTests.length) { console.log('No changed files.'); return; }
-  const selection = selectForFiles(tests, saved, changes);
-  if (selection.fullRunMessage) {
-    console.log(selection.fullRunMessage); return baseline();
+  const selection = selectTestsForFiles({ config: projectConfig, files: changes, record: saved, tests });
+  if (selection.kind === 'baseline') {
+    console.log(selection.message); return baseline();
   }
   for (const message of selection.messages) console.log(message);
   if (changes.length) console.log(`Changed files: ${changes.join(', ')}`);
   else console.log(`No changed files; rerunning ${saved.failedTests.length} previously failing test file(s).`);
-  if (!selection.selected.size) { console.log('No affected tests found.'); return; }
-  const selectedTests = [...selection.selected].sort();
+  if (!selection.tests.length) { console.log('No affected tests found.'); return; }
+  const selectedTests = selection.tests;
   console.log(`Selected ${selectedTests.length}/${tests.length} test file(s)`);
   finishRun(tests, await runTests(selectedTests, saved.graph), saved);
 }
@@ -566,16 +508,16 @@ async function watchMode() {
       if (!saved) {
         await baseline();
       } else {
-        const selection = selectForFiles(tests, saved, files);
-        if (selection.fullRunMessage) {
-          console.log(selection.fullRunMessage);
+        const selection = selectTestsForFiles({ config: projectConfig, files, record: saved, tests });
+        if (selection.kind === 'baseline') {
+          console.log(selection.message);
           await baseline();
         } else {
           for (const message of selection.messages) console.log(message);
-          if (!selection.selected.size) {
+          if (!selection.tests.length) {
             console.log('No related tests found.');
           } else {
-            const selectedTests = [...selection.selected].sort();
+            const selectedTests = selection.tests;
             console.log(`Selected ${selectedTests.length}/${tests.length} test file(s)`);
             finishRun(tests, await runTests(selectedTests, saved.graph), saved);
           }
