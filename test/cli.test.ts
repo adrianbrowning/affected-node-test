@@ -81,6 +81,7 @@ function makeRepository({ withOtherTest = false } = {}) {
   git(cwd, 'config', 'user.name', 'Tests');
   git(cwd, 'add', '.');
   git(cwd, 'commit', '-qm', 'initial');
+  git(cwd, 'branch', '-M', 'main');
   return cwd;
 }
 
