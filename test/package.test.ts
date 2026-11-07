@@ -22,8 +22,11 @@ test('the published package and checked quickstart use the affected-node-test id
   assert.equal(builtVersion.status, 0, builtVersion.stderr);
   assert.equal(builtVersion.stdout, `affected-node-test ${packageJson.version}\n`);
 
-  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const packed = spawnSync(npm, ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+  const packCommand = process.platform === 'win32' ? 'cmd.exe' : 'npm';
+  const packArguments = process.platform === 'win32'
+    ? ['/d', '/s', '/c', 'npm pack --dry-run --json --ignore-scripts']
+    : ['pack', '--dry-run', '--json', '--ignore-scripts'];
+  const packed = spawnSync(packCommand, packArguments, {
     cwd: root,
     encoding: 'utf8',
   });
