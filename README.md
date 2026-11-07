@@ -70,6 +70,7 @@ pnpm exec affected-node-test clear-cache
 pnpm exec affected-node-test doctor
 pnpm exec affected-node-test affected --output=json
 pnpm exec affected-node-test affected --dry-run --output=json
+pnpm exec affected-node-test affected --project 'packages/api-*'
 ```
 
 - `baseline` runs all discovered test files, merges literal static-import edges with observed runtime module-resolution edges, and writes `.affected-tests/graph.json` after a passing suite.
@@ -79,6 +80,7 @@ pnpm exec affected-node-test affected --dry-run --output=json
 - `last-failed` reruns exactly the failures retained by the graph cache and clearly no-ops after they recover. Without a usable cache it conservatively runs the full suite.
 - `--dry-run` previews `baseline`, `affected`, `related`, `since-last-run`, or `last-failed` selections and their reasons without launching test workers or updating the graph cache. Workspace previews preserve project routing and identify workspace-wide fallbacks.
 - Add `--output=json` to a finite command for one versioned, machine-readable execution document, or combine it with `--dry-run` for a selection preview. Informational diagnostics and test output are written to stderr so stdout remains parseable JSON. Workspace commands produce one aggregate document with routing decisions and nested project documents.
+- In a workspace, repeatable `--project GLOB` options restrict finite and watch commands to matching configured project paths. Filters preserve lexical project order and fail when no projects match.
 - `watch` performs an initial full run, then persistently watches the project and serially reruns only tests selected by the same dependency graph, conservative triggers, and non-module mappings.
 - `clear-cache` removes the saved dependency graph and is safe to run when no cache exists.
 - The graph cache is tied to the exact Node version, `NODE_OPTIONS`, package manifests, lockfiles, npm configuration, Node version files, and TypeScript configuration files.
@@ -187,7 +189,7 @@ A workspace root can delegate to isolated project roots instead of defining sing
 }
 ```
 
-Project roots are validated, deduplicated, rejected when overlapping, and run in lexical order. Each project owns its discovery, configuration, dependency graph, and cache. Workspace `baseline`, `affected`, `since-last-run`, `last-failed`, `related`, `watch`, `clear-cache`, and read-only `doctor` diagnostics are supported. Git and explicit related paths are routed project-relative to their owning runners; workspace-level changes conservatively run every project baseline. Unchanged projects still check since-last-run records so sticky failures are not lost. Workspace watch runs project watchers concurrently, prefixes their output with project paths, and coordinates readiness and signal-driven shutdown. The workspace `projects` option cannot be mixed with single-project options in the same configuration file.
+Project roots are validated, deduplicated, rejected when overlapping, and run in lexical order. Each project owns its discovery, configuration, dependency graph, and cache. Workspace `baseline`, `affected`, `since-last-run`, `last-failed`, `related`, `watch`, `clear-cache`, and read-only `doctor` diagnostics are supported. Repeat `--project GLOB` to run only matching project paths; routing continues to respect ownership, so files in excluded projects do not run selected projects. Git and explicit related paths are routed project-relative to their owning runners; workspace-level changes conservatively run every project baseline. Unchanged projects still check since-last-run records so sticky failures are not lost. Workspace watch runs project watchers concurrently, prefixes their output with project paths, and coordinates readiness and signal-driven shutdown. The workspace `projects` option cannot be mixed with single-project options in the same configuration file.
 
 ## Known limitations
 

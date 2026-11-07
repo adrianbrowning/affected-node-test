@@ -2,6 +2,7 @@ const concurrency = `Options:
   --concurrency N|P%  Run at most N test files, or floor(P% of available parallelism).
                       Percentages must be >0% and <=100%, with a minimum of 1 worker.
                       Default concurrency is min(4, available parallelism), with a minimum of 1.
+  --project GLOB       In a workspace, run only matching project paths. Repeatable.
   -h, --help       Show this command's help.`;
 
 const commandHelpText = {

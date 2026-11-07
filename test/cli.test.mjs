@@ -841,6 +841,52 @@ test('workspace baseline runs configured projects with isolated caches', () => {
   }
 });
 
+test('workspace project filters scope finite and watch commands', { timeout: 60_000 }, async () => {
+  const cwd = makeWorkspace();
+  try {
+    const baseline = run(cwd, 'baseline', '--project', 'packages/a');
+    assert.equal(baseline.status, 0, baseline.stderr);
+    assert.match(baseline.stdout, /Project packages\/a/);
+    assert.doesNotMatch(baseline.stdout, /Project packages\/b/);
+    assert.equal(existsSync(join(cwd, 'packages', 'a', '.affected-tests', 'graph.json')), true);
+    assert.equal(existsSync(join(cwd, 'packages', 'b', '.affected-tests', 'graph.json')), false);
+
+    const multiple = run(cwd, 'baseline', '--project', 'packages/b', '--project', 'packages/a', '--output=json');
+    assert.equal(multiple.status, 0, multiple.stderr);
+    assert.deepEqual(JSON.parse(multiple.stdout).projects.map(({ path }) => path), ['packages/a', 'packages/b']);
+
+    const missing = run(cwd, 'baseline', '--project', 'packages/missing');
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /No workspace projects matched --project packages\/missing\./);
+
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    const child = spawn(process.execPath, [cli, 'watch', '--project', 'packages/a', '--concurrency', '1'], {
+      cwd,
+      env,
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const closed = new Promise((resolve) => child.once('close', (code) => resolve(code)));
+    try {
+      await waitForProcessOutput(child, () => stdout + stderr,
+        (output) => output.includes('Watching in 1 projects.'), 30_000);
+      assert.doesNotMatch(stdout, /\[packages\/b\]/);
+      child.kill('SIGTERM');
+      assert.equal(await closed, 143, stderr);
+    } finally {
+      if (child.exitCode === null) child.kill('SIGKILL');
+      await closed;
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('workspace related routes files only to their owning project', () => {
   const cwd = makeWorkspace();
   try {
@@ -852,6 +898,10 @@ test('workspace related routes files only to their owning project', () => {
     assert.doesNotMatch(related.stdout, /Project packages\/b/);
     assert.match(related.stdout, /Related files: src\/value\.mjs/);
     assert.match(related.stdout, /Selected 1\/1 related test file\(s\)/);
+
+    const excluded = run(cwd, 'related', 'packages/b/src/value.mjs', '--project', 'packages/a');
+    assert.equal(excluded.status, 0, excluded.stderr);
+    assert.doesNotMatch(excluded.stdout, /Project packages\/a|Project packages\/b|Building graph/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -869,6 +919,10 @@ test('workspace affected routes Git changes only to their owning project', () =>
     assert.match(affected.stdout, /Project packages\/a/);
     assert.doesNotMatch(affected.stdout, /Project packages\/b/);
     assert.match(affected.stdout, /Selected 1\/1 related test file\(s\)/);
+
+    const excluded = run(cwd, 'affected', '--project', 'packages/b');
+    assert.equal(excluded.status, 0, excluded.stderr);
+    assert.doesNotMatch(excluded.stdout, /Project packages\/a|Project packages\/b|Building graph/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

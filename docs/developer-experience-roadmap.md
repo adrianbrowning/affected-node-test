@@ -89,13 +89,13 @@ Acceptance criteria:
 
 ## DX-6: familiar workflow shortcuts
 
-Status: in progress ([last-failed #11](https://github.com/adrianbrowning/affected-node-test/issues/11), [percentage concurrency #13](https://github.com/adrianbrowning/affected-node-test/issues/13), [project filtering #14](https://github.com/adrianbrowning/affected-node-test/issues/14)).
+Status: complete ([last-failed #11](https://github.com/adrianbrowning/affected-node-test/issues/11), [percentage concurrency #13](https://github.com/adrianbrowning/affected-node-test/issues/13), [project filtering #14](https://github.com/adrianbrowning/affected-node-test/issues/14)).
 
 User stories: a user can immediately rerun failures, allocate a percentage of CPUs, and focus on one workspace project.
 
 - [x] Add `last-failed` with existing sticky-failure semantics.
 - [x] Accept percentage concurrency with deterministic rounding and a minimum of one worker.
-- Add workspace `--project <glob>` filtering to finite and watch commands.
+- [x] Add workspace `--project <glob>` filtering to finite and watch commands.
 
 Acceptance criteria:
 

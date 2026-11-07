@@ -63,6 +63,7 @@ function parseArguments(values) {
   const positionals = [];
   let dryRun = false;
   let output = 'human';
+  const projectFilters = [];
   let concurrency = Math.max(1, Math.min(4, availableParallelism()));
   for (let index = 0; index < values.length; index += 1) {
     if (values[index] === '--concurrency') {
@@ -83,13 +84,23 @@ function parseArguments(values) {
         failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
       }
       output = 'json';
+    } else if (values[index] === '--project') {
+      if (!['baseline', 'affected', 'related', 'since-last-run', 'last-failed', 'watch', 'clear-cache'].includes(command)) {
+        failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
+      }
+      const value = values[index + 1];
+      if (!value || value.startsWith('-')) {
+        failUsage('--project requires a non-empty glob.', commandHelp(command));
+      }
+      projectFilters.push(value);
+      index += 1;
     } else if (values[index].startsWith('-')) {
       failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
     } else {
       positionals.push(values[index]);
     }
   }
-  return { concurrency, dryRun, output, positionals };
+  return { concurrency, dryRun, output, positionals, projectFilters };
 }
 const options = parseArguments(args);
 if (command === 'related' && !options.positionals.length) {
@@ -157,6 +168,9 @@ if (projectConfig.projects.length) {
   } catch (error) {
     fail(error.message);
   }
+}
+if (options.projectFilters.length) {
+  failUsage('--project requires a workspace configuration.', commandHelp(command));
 }
 process.once('SIGINT', () => interrupt('SIGINT'));
 process.once('SIGTERM', () => interrupt('SIGTERM'));

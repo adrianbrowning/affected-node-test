@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { loadProjectConfig } from './project-config.mjs';
+import { loadProjectConfig, matchesPatterns } from './project-config.mjs';
 import { getGitChanges } from './git-changes.mjs';
 import { selectionProvider } from './selection-document.mjs';
 import { watchReadyMessageType } from './watch-protocol.mjs';
@@ -22,6 +22,22 @@ function splitCommandArgs(args) {
     }
   }
   return { forwardedOptions, positionals };
+}
+
+function extractProjectFilters(args) {
+  const commandArgs = [];
+  const projectFilters = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== '--project') {
+      commandArgs.push(args[index]);
+      continue;
+    }
+    const filter = args[index + 1];
+    if (!filter || filter.startsWith('-')) throw new Error('--project requires a non-empty glob.');
+    projectFilters.push(filter);
+    index += 1;
+  }
+  return { commandArgs, projectFilters };
 }
 
 function baselineVerb(options) {
@@ -150,13 +166,20 @@ export function resolveWorkspaceProjects({ root, projects }) {
   return resolvedProjects;
 }
 
-export async function runWorkspace({ root, projects, command, args, cliPath }) {
+export async function runWorkspace({ root, projects, command, args: rawArgs, cliPath }) {
   const supportedCommands = new Set(['baseline', 'since-last-run', 'last-failed', 'clear-cache', 'related', 'affected', 'watch']);
   if (!supportedCommands.has(command)) {
     throw new Error(`Workspace command is not implemented yet: ${command}`);
   }
 
-  const resolvedProjects = resolveWorkspaceProjects({ root, projects });
+  const allProjects = resolveWorkspaceProjects({ root, projects });
+  const { commandArgs: args, projectFilters } = extractProjectFilters(rawArgs);
+  const resolvedProjects = projectFilters.length
+    ? allProjects.filter((project) => projectFilters.some((filter) => matchesPatterns(project.path, [filter])))
+    : allProjects;
+  if (!resolvedProjects.length) {
+    throw new Error(`No workspace projects matched ${projectFilters.map((filter) => `--project ${filter}`).join(', ')}.`);
+  }
   const jsonOutput = args.includes('--output=json');
   const log = jsonOutput ? console.error : console.log;
   let routing = { kind: 'all-projects' };
@@ -181,11 +204,12 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
         throw new Error(`Related file is outside the workspace root: ${file}`);
       }
       const normalizedWorkspacePath = normal(workspacePath);
-      const owner = ownerOf(resolvedProjects, normalizedWorkspacePath);
+      const owner = ownerOf(allProjects, normalizedWorkspacePath);
       if (!owner) {
         workspaceLevelFile = normalizedWorkspacePath;
         continue;
       }
+      if (!groupedFiles.has(owner.path)) continue;
       groupedFiles.get(owner.path).push(normal(relative(owner.root, absoluteFile)));
     }
 
@@ -218,7 +242,7 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
     const ref = positionals[0];
     const changed = getGitChanges({
       exclude: (workspacePath) => {
-        const owner = ownerOf(resolvedProjects, workspacePath);
+        const owner = ownerOf(allProjects, workspacePath);
         if (!owner) return false;
         const projectPath = workspacePath.slice(owner.path.length + 1);
         return isProjectCachePath(owner, projectPath);
@@ -238,8 +262,9 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
       if (changes.length) log(`Changed files: ${changes.join(', ')}`);
       const groupedFiles = new Map(resolvedProjects.map((project) => [project.path, []]));
       const workspaceLevelChange = changes.find((workspacePath) => {
-        const owner = ownerOf(resolvedProjects, workspacePath);
+        const owner = ownerOf(allProjects, workspacePath);
         if (!owner) return true;
+        if (!groupedFiles.has(owner.path)) return false;
         groupedFiles.get(owner.path).push(workspacePath.slice(owner.path.length + 1));
         return false;
       });
@@ -299,6 +324,7 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
       outcome: exitCode ? 'failed' : 'passed',
       exitCode,
       routing,
+      projectFilters,
       projects: projectDocuments,
     }, null, 2));
   } else if (printNoChangedFiles && !displayedProjects) {
