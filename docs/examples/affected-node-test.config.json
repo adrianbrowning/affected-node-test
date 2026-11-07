@@ -1,4 +1,5 @@
 {
+  "cacheDir": ".cache/affected-node-test",
   "include": ["test/**/*.test.mjs"],
   "exclude": ["test/fixtures/**"],
   "envFiles": [".env", ".env.test"],

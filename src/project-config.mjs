@@ -26,6 +26,15 @@ function stringArray(config, key) {
   return value;
 }
 
+function nonEmptyString(config, key, fallback) {
+  const value = config[key];
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string' || value === '') {
+    throw new Error(`${configFileName}: ${key} must be a non-empty string.`);
+  }
+  return value;
+}
+
 function watchTriggerPatterns(config) {
   const value = config.watchTriggerPatterns;
   if (value === undefined) return [];
@@ -57,6 +66,7 @@ export function loadProjectConfig(root) {
   } catch (error) {
     if (error.code === 'ENOENT') {
       return {
+        cacheDir: '.affected-tests',
         include: [],
         exclude: [],
         envFiles: [],
@@ -79,6 +89,7 @@ export function loadProjectConfig(root) {
     throw new Error(`${configFileName}: configuration must be a JSON object.`);
   }
   const knownKeys = new Set([
+    'cacheDir',
     'include',
     'exclude',
     'envFiles',
@@ -91,6 +102,7 @@ export function loadProjectConfig(root) {
   const unknownKey = Object.keys(config).find((key) => !knownKeys.has(key));
   if (unknownKey) throw new Error(`${configFileName}: unknown option ${unknownKey}.`);
   return {
+    cacheDir: nonEmptyString(config, 'cacheDir', '.affected-tests'),
     include: stringArray(config, 'include'),
     exclude: stringArray(config, 'exclude'),
     envFiles: stringArray(config, 'envFiles'),

@@ -279,6 +279,48 @@ test('clear-cache removes the saved dependency graph', () => {
   }
 });
 
+test('a configured cache directory is used for writes and clearing', () => {
+  const cwd = makeRepository();
+  try {
+    writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({
+      cacheDir: 'cache/affected-node-test',
+      projectDependencies: ['**/*'],
+    }));
+    git(cwd, 'add', 'affected-node-test.config.json');
+    git(cwd, 'commit', '-qm', 'configure cache');
+    const cache = join(cwd, 'cache', 'affected-node-test', 'graph.json');
+
+    const baseline = run(cwd, 'baseline');
+    assert.equal(baseline.status, 0, baseline.stderr);
+    assert.equal(existsSync(cache), true);
+    assert.equal(existsSync(join(cwd, '.affected-tests', 'graph.json')), false);
+
+    const affected = run(cwd, 'affected');
+    assert.equal(affected.status, 0, affected.stderr);
+    assert.match(affected.stdout, /No changed files\./);
+
+    const cleared = run(cwd, 'clear-cache');
+    assert.equal(cleared.status, 0, cleared.stderr);
+    assert.match(cleared.stdout, /Cleared cache: cache\/affected-node-test\/graph\.json/);
+    assert.equal(existsSync(cache), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('a configured cache directory cannot escape the project root', () => {
+  const cwd = makeRepository();
+  try {
+    writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({ cacheDir: '../shared-cache' }));
+
+    const baseline = run(cwd, 'baseline');
+    assert.equal(baseline.status, 1);
+    assert.match(baseline.stderr, /cacheDir must stay within the project root/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('a structurally invalid cache falls back to the full suite', () => {
   const cwd = makeRepository();
   try {

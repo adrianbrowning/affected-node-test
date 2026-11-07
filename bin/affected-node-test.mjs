@@ -13,13 +13,11 @@ import {
   loadProjectConfig,
   matchesPatterns,
   matchingRepositoryFiles,
-  projectDependencyFingerprint,
   repositoryFilesFingerprint,
 } from '../src/project-config.mjs';
 
 const root = process.cwd();
 const hook = fileURLToPath(new URL('../src/hook.mjs', import.meta.url));
-const cachePath = join(root, '.affected-tests', 'graph.json');
 const [command = 'help', ...args] = process.argv.slice(2);
 const usage = 'Usage:\n  affected-node-test baseline [--concurrency N]\n  affected-node-test affected [git-ref] [--concurrency N]\n  affected-node-test related <file...> [--concurrency N]\n  affected-node-test since-last-run [--concurrency N]\n  affected-node-test clear-cache';
 const fail = (message) => { console.error(message); process.exit(1); };
@@ -89,10 +87,29 @@ try {
 } catch (error) {
   fail(error.message);
 }
+const cacheDirectory = resolve(root, projectConfig.cacheDir);
+const cacheDirectoryFromRoot = relative(root, cacheDirectory);
+if (isAbsolute(projectConfig.cacheDir) || cacheDirectoryFromRoot === '..' || cacheDirectoryFromRoot.startsWith(`..${sep}`)) {
+  fail('affected-node-test.config.json: cacheDir must stay within the project root.');
+}
+const cachePath = join(cacheDirectory, 'graph.json');
+const cacheDirectoryRepositoryPath = normal(cacheDirectoryFromRoot);
+const cacheRepositoryPath = normal(relative(root, cachePath));
+function isCacheRepositoryPath(path) {
+  return path === cacheRepositoryPath || (
+    cacheDirectoryRepositoryPath && path.startsWith(`${cacheDirectoryRepositoryPath}/`)
+  );
+}
+function matchingProjectFiles(patterns) {
+  return matchingRepositoryFiles(root, patterns).filter((path) => !isCacheRepositoryPath(path));
+}
+function configuredProjectDependencyFingerprint() {
+  return repositoryFilesFingerprint(root, matchingProjectFiles(projectConfig.projectDependencies));
+}
 function resolveConfiguredFiles(key, patterns) {
   const files = new Set();
   for (const pattern of patterns) {
-    const matches = matchingRepositoryFiles(root, [pattern]);
+    const matches = matchingProjectFiles([pattern]);
     if (!matches.length) fail(`affected-node-test.config.json: ${key} pattern matched no files: ${pattern}`);
     for (const match of matches) files.add(match);
   }
@@ -101,7 +118,7 @@ function resolveConfiguredFiles(key, patterns) {
 const setupFiles = resolveConfiguredFiles('setupFiles', projectConfig.setupFiles);
 const globalSetupFiles = resolveConfiguredFiles('globalSetupFiles', projectConfig.globalSetupFiles);
 const envFiles = resolveConfiguredFiles('envFiles', projectConfig.envFiles);
-const conventionDependencyFiles = matchingRepositoryFiles(root, conventionDependencyPatterns);
+const conventionDependencyFiles = matchingProjectFiles(conventionDependencyPatterns);
 const globalSetupEdges = [];
 let recordGlobalSetupEdges = false;
 if (globalSetupFiles.size) {
@@ -317,7 +334,7 @@ function save(tests, graph, failedTests = [], dependencyStates = {}, unresolvedS
     version: 10,
     node: process.versions.node,
     config: configurationFingerprint(root),
-    projectDependencies: projectDependencyFingerprint(root, projectConfig.projectDependencies),
+    projectDependencies: configuredProjectDependencyFingerprint(),
     setupDependencyFiles: setupDependencies,
     setupDependencies: repositoryFilesFingerprint(root, setupDependencies),
     setupFiles: resolvedSetupFiles,
@@ -411,7 +428,8 @@ function diffFiles(ref) {
   const changed = runGit('diff', '--name-only', '-z', base, '--').toString('utf8').split('\0').filter(Boolean);
   // `git diff` does not show untracked additions.
   const untracked = runGit('ls-files', '--others', '--exclude-standard', '-z').toString('utf8').split('\0').filter(Boolean);
-  return [...new Set([...changed, ...untracked].map(normal))].filter((p) => !p.startsWith('.affected-tests/')); 
+  return [...new Set([...changed, ...untracked].map(normal))]
+    .filter((path) => !isCacheRepositoryPath(path));
 }
 function dependencies(edges, test) {
   const adjacency = new Map();
@@ -443,7 +461,7 @@ function loadUsableCache(tests) {
   if (saved.config !== configurationFingerprint(root)) {
     console.log('Project configuration changed since graph was built; running full suite.'); return;
   }
-  if (saved.projectDependencies !== projectDependencyFingerprint(root, projectConfig.projectDependencies)) {
+  if (saved.projectDependencies !== configuredProjectDependencyFingerprint()) {
     console.log('Project dependencies changed since graph was built; running full suite.'); return;
   }
   if (JSON.stringify(saved.environmentFiles) !== JSON.stringify([...envFiles].sort()) ||

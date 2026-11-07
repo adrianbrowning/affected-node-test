@@ -49,10 +49,11 @@ README code blocks with `file=...` metadata are synchronized from checked-in exa
 
 ## Configuration
 
-An optional `affected-node-test.config.json` at the repository root supports three arrays of glob patterns:
+An optional `affected-node-test.config.json` at the repository root controls cache location, discovery, setup, and dependency triggers:
 
 ```json file=docs/examples/affected-node-test.config.json
 {
+  "cacheDir": ".cache/affected-node-test",
   "include": ["test/**/*.test.mjs"],
   "exclude": ["test/fixtures/**"],
   "envFiles": [".env", ".env.test"],
@@ -70,6 +71,7 @@ An optional `affected-node-test.config.json` at the repository root supports thr
 ```
 
 - A non-empty `include` replaces default `.test`/`.spec` JavaScript discovery.
+- `cacheDir` sets a project-relative cache directory; it defaults to `.affected-tests` and cannot escape the project root.
 - `exclude` removes matching repository-relative paths from discovery.
 - `envFiles` resolves repository-relative globs and loads every match, in deterministic order, before global setup and test workers. Loading follows Node's native `process.loadEnvFile()` semantics.
 - `forceRerunTriggers` runs the full suite when any changed path matches.
