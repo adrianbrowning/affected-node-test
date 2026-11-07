@@ -1,17 +1,63 @@
-# Affected Node tests (proof of concept)
+# affected-node-test
 
 An Acorn-backed affected-test selector for Node's native `node:test`, combining static import analysis with synchronous runtime `node:module` hooks.
 
-**Requirements:** Node 22.15+. Git is required only for `affected`. Run from the project root. Default discovery supports `.test.js`, `.test.mjs`, `.test.cjs`, `.spec.js`, `.spec.mjs`, `.spec.cjs`.
+## Install
+
+`affected-node-test` requires Node 22.15 or newer. Install it as a development dependency with your package manager:
+
+```sh
+pnpm add --save-dev affected-node-test
+# or: npm install --save-dev affected-node-test
+```
+
+Run commands from the project root. Git is required only for `affected`; `baseline`, `related`, and `since-last-run` also work outside a Git repository.
+
+## Quick start
+
+```sh file=docs/examples/quickstart.sh
+pnpm add --save-dev affected-node-test
+pnpm exec affected-node-test baseline
+
+# After changing source or tests, run the affected feedback loop.
+pnpm exec affected-node-test affected
+
+# Always finish with the project's complete test command.
+node --test
+```
+
+The initial passing `baseline` records the dependency graph. Later `affected` runs select tests for staged, unstaged, and untracked changes. A full test command remains the required final correctness gate.
+
+No configuration is needed for conventional `.test.js`, `.test.mjs`, `.test.cjs`, `.spec.js`, `.spec.mjs`, and `.spec.cjs` files. To make discovery explicit, add this optional `affected-node-test.config.json`:
+
+```json file=docs/examples/minimal-config.json
+{
+  "include": ["test/**/*.test.mjs"]
+}
+```
+
+## Which command should I use?
+
+| Goal | Command |
+| --- | --- |
+| Create or refresh the complete dependency graph | `pnpm exec affected-node-test baseline` |
+| Select staged, unstaged, and untracked Git changes | `pnpm exec affected-node-test affected` |
+| Select committed changes since a branch or commit | `pnpm exec affected-node-test affected origin/main` |
+| Select tests related to explicit paths without Git | `pnpm exec affected-node-test related src/math.mjs` |
+| Select dependencies changed on disk without Git | `pnpm exec affected-node-test since-last-run` |
+| Keep selecting tests as files change | `pnpm exec affected-node-test watch` |
+| Remove the saved graph | `pnpm exec affected-node-test clear-cache` |
+
+## Command reference
 
 ```sh file=docs/examples/commands.sh
-node bin/affected-node-test.mjs baseline --concurrency 4
-node bin/affected-node-test.mjs affected --concurrency 4
-node bin/affected-node-test.mjs affected origin/main --concurrency 4
-node bin/affected-node-test.mjs related src/math.mjs --concurrency 4
-node bin/affected-node-test.mjs since-last-run --concurrency 4
-node bin/affected-node-test.mjs watch --concurrency 4
-node bin/affected-node-test.mjs clear-cache
+pnpm exec affected-node-test baseline --concurrency 4
+pnpm exec affected-node-test affected --concurrency 4
+pnpm exec affected-node-test affected origin/main --concurrency 4
+pnpm exec affected-node-test related src/math.mjs --concurrency 4
+pnpm exec affected-node-test since-last-run --concurrency 4
+pnpm exec affected-node-test watch --concurrency 4
+pnpm exec affected-node-test clear-cache
 ```
 
 - `baseline` runs all discovered test files, merges literal static-import edges with observed runtime module-resolution edges, and writes `.affected-tests/graph.json` after a passing suite.
@@ -28,23 +74,9 @@ node bin/affected-node-test.mjs clear-cache
 - `SIGINT` and `SIGTERM` stop active test processes, clean temporary edge logs, preserve the previous cache, and use conventional exit codes.
 - Watch events are debounced, cache/build/dependency directories are ignored, and changes arriving during a run are queued for the next serialized rerun.
 
-## Demo
-
-```sh file=docs/examples/demo.sh
-cd example
-git init
-git add .
-git commit -m initial
-node ../bin/affected-node-test.mjs baseline
-printf '\n// modified\n' >> src/math.mjs
-node ../bin/affected-node-test.mjs affected HEAD
-```
-
-Only `test/format.test.mjs` should be selected: it imports `format.mjs`, which imports `math.mjs`.
-
 ## Development
 
-Run the integration suite with `npm test`. The tests exercise the CLI in temporary Git repositories and do not modify the working repository.
+Run the integration suite with `pnpm test`. The tests exercise the CLI in temporary Git repositories and do not modify the working repository.
 
 This repository dogfoods its own selector:
 
@@ -119,9 +151,9 @@ A workspace root can delegate to isolated project roots instead of defining sing
 
 Project roots are validated, deduplicated, rejected when overlapping, and run in lexical order. Each project owns its discovery, configuration, dependency graph, and cache. Workspace `baseline`, `affected`, `since-last-run`, `related`, `watch`, and `clear-cache` are supported. Git and explicit related paths are routed project-relative to their owning runners; workspace-level changes conservatively run every project baseline. Unchanged projects still check since-last-run records so sticky failures are not lost. Workspace watch runs project watchers concurrently, prefixes their output with project paths, and coordinates readiness and signal-driven shutdown. The workspace `projects` option cannot be mixed with single-project options in the same configuration file.
 
-## Deliberate prototype limitations
+## Known limitations
 
-- This is a **proof of concept**, not yet a production-safe drop-in. Literal ESM imports, re-exports, dynamic imports, and CommonJS `require()` calls are parsed statically; executed runtime imports are merged into the same graph.
+- Literal ESM imports, re-exports, dynamic imports, and CommonJS `require()` calls are parsed statically; executed runtime imports are merged into the same graph.
 - Computed imports and parse failures are marked unresolved. For Git selection, any JavaScript change conservatively selects tests with unresolved static imports. Non-Git state selection cannot discover a brand-new computed target that was never recorded.
 - Each test file runs in its own Node process rather than using native multi-file test concurrency. Output is buffered and printed in deterministic test-file order.
 - The graph only tracks `file:` dependencies **inside the Git repository**. Changes in external linked packages are not handled.

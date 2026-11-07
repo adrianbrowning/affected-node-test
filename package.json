@@ -1,8 +1,26 @@
 {
-  "name": "node-affected-tests-prototype",
+  "name": "affected-node-test",
   "version": "0.1.0",
-  "private": true,
+  "description": "Affected-test selection for Node's native test runner",
   "type": "module",
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adrianbrowning/affected-node-test.git"
+  },
+  "bugs": {
+    "url": "https://github.com/adrianbrowning/affected-node-test/issues"
+  },
+  "homepage": "https://github.com/adrianbrowning/affected-node-test#readme",
+  "keywords": [
+    "affected-tests",
+    "node-test",
+    "test-selection"
+  ],
   "packageManager": "pnpm@12.14.0",
   "engines": {
     "node": ">=22.15.0"

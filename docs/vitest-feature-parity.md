@@ -9,9 +9,9 @@ Vitest 5.1 has two complementary affected-test models:
 1. `--changed [ref]` asks Git for changed files and selects tests whose transitive import graphs reach those files. Without runtime dependency recording, Vitest builds a static module graph before the run. [`vitest related <files>`](https://vitest.dev/guide/cli#vitest-related) applies the same idea to an explicit file list. [Vitest's `changed` reference](https://vitest.dev/config/changed) describes staged/unstaged selection, refs, project-wide dependencies, and full-rerun triggers.
 2. `--since-last-run` records the files each test actually loaded and later compares their mtimes with that test's last successful record. It does not require Git. New/unrecorded tests and previously failing tests run automatically. [The affected-tests recipe](https://vitest.dev/guide/recipes/affected-tests) explains the distinction and recommends a final full run before completion.
 
-This prototype supports both providers over one runtime-recorded graph: `affected [REF]` obtains changed paths from Git, while `since-last-run` compares per-test dependency metadata without Git. Its Git provider is therefore closest to Vitest's `--changed` combined with `experimental.recordDependencies`, not Vitest's default static-graph `--changed` behavior.
+`affected-node-test` supports both providers over one runtime-recorded graph: `affected [REF]` obtains changed paths from Git, while `since-last-run` compares per-test dependency metadata without Git. Its Git provider is therefore closest to Vitest's `--changed` combined with `experimental.recordDependencies`, not Vitest's default static-graph `--changed` behavior.
 
-The prototype already has meaningful strengths: transitive static and runtime ESM/CommonJS dependency selection, merge-base Git selection including staged and untracked changes, conservative unresolved-import fallbacks, single-project dependency tracking, exact-runtime/configuration cache invalidation, atomic cache writes, sticky reruns for previously failing tests, configurable non-module/full-rerun triggers, and bounded deterministic parallel execution. The largest remaining architectural gap is multi-project isolation.
+The tool already has meaningful strengths: transitive static and runtime ESM/CommonJS dependency selection, merge-base Git selection including staged and untracked changes, conservative unresolved-import fallbacks, isolated multi-project orchestration, exact-runtime/configuration cache invalidation, atomic cache writes, sticky reruns for previously failing tests, configurable non-module/full-rerun triggers, and bounded deterministic parallel execution. Remaining gaps are narrower dependency integrations and optional workflow ergonomics rather than project isolation.
 
 ## Parity matrix
 
@@ -37,7 +37,7 @@ The prototype already has meaningful strengths: transitive static and runtime ES
 
 ## Important shared limitations
 
-Runtime recording is not complete in either system. Vitest documents that an unexecuted dynamic import is not recorded, files read through `fs` are not recorded, and imports of externalized modules are not recorded. It also warns that changing imports and committing before refreshing records can later miss a dependency. [Vitest dependency-recording limitations](https://vitest.dev/config/experimental#experimental-recorddependencies) closely match this prototype's documented runtime-observation limitation.
+Runtime recording is not complete in either system. Vitest documents that an unexecuted dynamic import is not recorded, files read through `fs` are not recorded, and imports of externalized modules are not recorded. It also warns that changing imports and committing before refreshing records can later miss a dependency. [Vitest dependency-recording limitations](https://vitest.dev/config/experimental#experimental-recorddependencies) closely match this tool's documented runtime-observation limitation.
 
 Vitest's mtime provider also cannot detect timestamps moved into the past by a checkout/archive or files that did not exist during the recorded run. Its official guidance is to use affected selection for fast feedback and still perform a full suite before merge or task completion. [Affected-tests recipe](https://vitest.dev/guide/recipes/affected-tests)
 
@@ -63,7 +63,7 @@ This means “Vitest parity” should not be interpreted as making runtime recor
 
 ### P2: efficiency and ergonomics
 
-11. Run only new/unrecorded tests instead of rebuilding the whole suite when inventory grows.
+11. Running only new/unrecorded tests instead of rebuilding the whole suite when inventory grows is complete.
 12. Storing durations and starting historically slow tests first while retaining deterministic reporting is complete.
 13. Consider percentage concurrency and result-focused commands such as `last-failed`.
 
