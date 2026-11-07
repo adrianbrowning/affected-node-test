@@ -511,6 +511,36 @@ test('workspace watch coordinates project reruns and shutdown', { timeout: 60_00
   }
 });
 
+test('workspace watch stops sibling watchers when one project fails to start', { timeout: 30_000 }, async () => {
+  const cwd = makeWorkspace();
+  writeFileSync(join(cwd, 'packages', 'b', 'affected-node-test.config.json'), JSON.stringify({
+    setupFiles: ['test/missing-setup.mjs'],
+  }));
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const child = spawn(process.execPath, [cli, 'watch', '--concurrency', '1'], {
+    cwd,
+    encoding: 'utf8',
+    env,
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  const closed = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
+  try {
+    const result = await closed;
+    assert.equal(result.code, 1, `${stdout}\n${stderr}`);
+    assert.match(stderr, /packages\/b.*setupFiles pattern matched no files/s);
+  } finally {
+    if (child.exitCode === null) child.kill('SIGKILL');
+    await closed;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('a structurally invalid cache falls back to the full suite', () => {
   const cwd = makeRepository();
   try {

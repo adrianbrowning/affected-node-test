@@ -50,7 +50,7 @@ function prefixLines(stream, destination, projectPath) {
   };
 }
 
-function runWorkspaceWatch({ projects, args, cliPath, signal }) {
+function runWorkspaceWatch({ projects, args, cliPath }) {
   return new Promise((resolveResult) => {
     const children = [];
     const readyProjects = new Set();
@@ -65,6 +65,12 @@ function runWorkspaceWatch({ projects, args, cliPath, signal }) {
       for (const child of children) {
         if (child.exitCode === null) child.kill(childSignal);
       }
+    };
+    const onSigint = () => stop(130, 'SIGINT');
+    const onSigterm = () => stop(143, 'SIGTERM');
+    const cleanupSignals = () => {
+      process.removeListener('SIGINT', onSigint);
+      process.removeListener('SIGTERM', onSigterm);
     };
 
     for (const project of projects) {
@@ -90,20 +96,18 @@ function runWorkspaceWatch({ projects, args, cliPath, signal }) {
         flushStderr();
         closedChildren += 1;
         if (!stopping) stop(code ?? 1);
-        if (closedChildren === children.length) resolveResult(exitCode);
+        if (closedChildren === children.length) {
+          cleanupSignals();
+          resolveResult(exitCode);
+        }
       });
     }
-
-    const abort = () => {
-      const childSignal = typeof signal?.reason === 'string' ? signal.reason : 'SIGTERM';
-      stop(childSignal === 'SIGINT' ? 130 : 143, childSignal);
-    };
-    if (signal?.aborted) abort();
-    else signal?.addEventListener('abort', abort, { once: true });
+    process.once('SIGINT', onSigint);
+    process.once('SIGTERM', onSigterm);
   });
 }
 
-export async function runWorkspace({ root, projects, command, args, cliPath, signal }) {
+export async function runWorkspace({ root, projects, command, args, cliPath }) {
   const supportedCommands = new Set(['baseline', 'since-last-run', 'clear-cache', 'related', 'affected', 'watch']);
   if (!supportedCommands.has(command)) {
     throw new Error(`Workspace command is not implemented yet: ${command}`);
@@ -144,7 +148,7 @@ export async function runWorkspace({ root, projects, command, args, cliPath, sig
   if (command === 'watch') {
     const { forwardedOptions, positionals } = splitConcurrencyArgs(args);
     if (positionals.length) throw new Error(`Unexpected argument: ${positionals[0]}`);
-    return runWorkspaceWatch({ projects: resolvedProjects, args: forwardedOptions, cliPath, signal });
+    return runWorkspaceWatch({ projects: resolvedProjects, args: forwardedOptions, cliPath });
   }
 
   let projectRuns = resolvedProjects.map((project) => ({ project, command, args }));

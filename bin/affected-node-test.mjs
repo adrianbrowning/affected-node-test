@@ -73,8 +73,6 @@ function interrupt(signal) {
   forceKill.unref();
   stopWatching?.(signal);
 }
-process.once('SIGINT', () => interrupt('SIGINT'));
-process.once('SIGTERM', () => interrupt('SIGTERM'));
 const normal = (p) => p.split(sep).join('/').replace(/^\.\//, '');
 const runGit = (...argv) => {
   const result = spawnSync('git', argv, { cwd: root, encoding: 'buffer' });
@@ -92,8 +90,6 @@ try {
   fail(error.message);
 }
 if (projectConfig.projects.length) {
-  const workspaceController = command === 'watch' ? new AbortController() : undefined;
-  if (workspaceController) stopWatching = (signal) => workspaceController.abort(signal);
   try {
     const status = await runWorkspace({
       root,
@@ -101,14 +97,14 @@ if (projectConfig.projects.length) {
       command,
       args,
       cliPath: fileURLToPath(import.meta.url),
-      signal: workspaceController?.signal,
     });
-    stopWatching = undefined;
     process.exit(status);
   } catch (error) {
     fail(error.message);
   }
 }
+process.once('SIGINT', () => interrupt('SIGINT'));
+process.once('SIGTERM', () => interrupt('SIGTERM'));
 const cacheDirectory = resolve(root, projectConfig.cacheDir);
 const cacheDirectoryFromRoot = relative(root, cacheDirectory);
 if (isAbsolute(projectConfig.cacheDir) || cacheDirectoryFromRoot === '..' || cacheDirectoryFromRoot.startsWith(`..${sep}`)) {
