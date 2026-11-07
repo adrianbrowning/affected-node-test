@@ -39,7 +39,9 @@ This roadmap targets parity with Vitest's affected-test selection subsystem, not
 
 - [x] Add `related <files...>` selection
 - [x] Add ref-less `affected` for staged, unstaged, and untracked changes
-- [ ] Add `clear-cache` and configurable cache location
+- [ ] Complete cache lifecycle controls
+  - [x] Add `clear-cache`
+  - [ ] Add configurable cache location
 - [ ] Add persistent watch mode
 - [ ] Add multiple project/package roots with isolated caches and triggers
 - [ ] Support configurable discovery and decide the TypeScript/JSX loader contract

@@ -263,6 +263,22 @@ test('--concurrency rejects non-positive values before accessing Git', () => {
   }
 });
 
+test('clear-cache removes the saved dependency graph', () => {
+  const cwd = makeRepository();
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+    const cache = join(cwd, '.affected-tests', 'graph.json');
+    assert.equal(existsSync(cache), true);
+
+    const cleared = run(cwd, 'clear-cache');
+    assert.equal(cleared.status, 0, cleared.stderr);
+    assert.match(cleared.stdout, /Cleared cache: \.affected-tests\/graph\.json/);
+    assert.equal(existsSync(cache), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('a structurally invalid cache falls back to the full suite', () => {
   const cwd = makeRepository();
   try {

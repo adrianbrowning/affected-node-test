@@ -21,7 +21,7 @@ const root = process.cwd();
 const hook = fileURLToPath(new URL('../src/hook.mjs', import.meta.url));
 const cachePath = join(root, '.affected-tests', 'graph.json');
 const [command = 'help', ...args] = process.argv.slice(2);
-const usage = 'Usage:\n  affected-node-test baseline [--concurrency N]\n  affected-node-test affected [git-ref] [--concurrency N]\n  affected-node-test related <file...> [--concurrency N]\n  affected-node-test since-last-run [--concurrency N]';
+const usage = 'Usage:\n  affected-node-test baseline [--concurrency N]\n  affected-node-test affected [git-ref] [--concurrency N]\n  affected-node-test related <file...> [--concurrency N]\n  affected-node-test since-last-run [--concurrency N]\n  affected-node-test clear-cache';
 const fail = (message) => { console.error(message); process.exit(1); };
 if (command === 'help' || command === '--help' || command === '-h') {
   console.log(usage);
@@ -396,6 +396,10 @@ async function baseline() {
   console.log(`Building graph from ${tests.length} test file(s)`);
   finishRun(tests, await runTests(tests));
 }
+function clearCache() {
+  rmSync(cachePath, { force: true });
+  console.log(`Cleared cache: ${normal(relative(root, cachePath))}`);
+}
 function diffFiles(ref) {
   let base = 'HEAD';
   if (ref) {
@@ -586,5 +590,8 @@ if (command === 'baseline') {
 } else if (command === 'since-last-run') {
   if (options.positionals.length) fail(`Unexpected argument: ${options.positionals[0]}`);
   await sinceLastRun();
+} else if (command === 'clear-cache') {
+  if (options.positionals.length) fail(`Unexpected argument: ${options.positionals[0]}`);
+  clearCache();
 }
 else fail(`Unknown command: ${command}\n\n${usage}`);
