@@ -6,7 +6,7 @@ import { resolve, relative, join, sep, isAbsolute } from 'node:path';
 import { availableParallelism, tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { configurationFingerprint } from '../src/config.mjs';
-import { loadDependencyRecord, writeDependencyRecord } from '../src/dependency-record.mjs';
+import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.mjs';
 import { buildStaticGraph } from '../src/static-graph.mjs';
 import { runWorkspace } from '../src/workspace.mjs';
 import { sendWatchReady } from '../src/watch-protocol.mjs';
@@ -341,14 +341,13 @@ function dependencyState(graph, test) {
   }
   return state;
 }
-function save(tests, graph, failedTests = [], dependencyStates = {}, unresolvedStaticTests = []) {
+function recordMetadata(graph) {
   const setupDependencies = dependencyClosure(graph, setupFiles);
   const globalSetupDependencies = dependencyClosure(graph, globalSetupFiles);
   const environmentFiles = [...envFiles].sort();
   const resolvedSetupFiles = [...setupFiles].sort();
   const resolvedGlobalSetupFiles = [...globalSetupFiles].sort();
-  // Dependency graphs are complete snapshots; failed runs only update status metadata.
-  writeDependencyRecord(cachePath, {
+  return {
     node: process.versions.node,
     config: configurationFingerprint(root),
     projectDependencies: configuredProjectDependencyFingerprint(),
@@ -362,35 +361,24 @@ function save(tests, graph, failedTests = [], dependencyStates = {}, unresolvedS
     environment: repositoryFilesFingerprint(root, environmentFiles),
     conventionDependencyFiles,
     conventionDependencies: repositoryFilesFingerprint(root, conventionDependencyFiles),
-    tests,
-    graph,
-    failedTests: [...failedTests].sort(),
-    dependencyStates,
-    unresolvedStaticTests: [...unresolvedStaticTests].sort(),
-  });
+  };
 }
 function finishRun(tests, result, previous) {
-  const { completedTests, failedTests, resultGraph, interrupted, unresolvedStaticTests = [] } = result;
-  if (interrupted) {
-    console.error(`Test run interrupted by ${interrupted}; previous graph was left unchanged.`);
-    process.exitCode = signalExitCodes[interrupted];
+  const outcome = applyDependencyRun(cachePath, {
+    dependencyStateForTest: dependencyState,
+    metadataForGraph: recordMetadata,
+    previous,
+    result,
+    tests,
+  });
+  if (outcome.status === 'interrupted') {
+    console.error(`Test run interrupted by ${outcome.signal}; previous graph was left unchanged.`);
+    process.exitCode = signalExitCodes[outcome.signal];
     return;
   }
-  if (!failedTests.length) {
-    const dependencyStates = { ...(previous?.dependencyStates ?? {}) };
-    const unresolved = new Set(previous?.unresolvedStaticTests ?? []);
-    for (const test of completedTests) dependencyStates[test] = dependencyState(resultGraph, test);
-    for (const test of completedTests) unresolved.delete(test);
-    for (const test of unresolvedStaticTests) unresolved.add(test);
-    save(tests, resultGraph, [], dependencyStates, unresolved);
+  if (outcome.status === 'passed') {
     process.exitCode = 0;
     return;
-  }
-  if (previous) {
-    const stickyFailures = new Set(previous.failedTests);
-    for (const test of completedTests) stickyFailures.delete(test);
-    for (const test of failedTests) stickyFailures.add(test);
-    save(tests, previous.graph, stickyFailures, previous.dependencyStates, previous.unresolvedStaticTests);
   }
   console.error('Tests failed; previous dependency graph was left unchanged and failure status was recorded.');
   process.exitCode = 1;

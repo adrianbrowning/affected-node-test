@@ -60,11 +60,11 @@ These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior 
   - [x] Move abort, shutdown, sibling-failure, and exit-code policy behind the workspace module interface
   - [x] Keep finite-run and persistent-watch process adapters internal to one workspace module
   - [x] Exercise readiness, failure, and shutdown through the same command-facing interface
-- [ ] Deepen the dependency-record lifecycle (**strong recommendation**)
+- [x] Deepen the dependency-record lifecycle (**strong recommendation**)
   - [x] Move schema version, structural validation, compatibility, and invalidation reasons out of the CLI module
-  - [ ] Give the record module a small interface for load decisions, successful updates, and failure preservation
+  - [x] Give the record module a small interface for load decisions, successful updates, and failure preservation
   - [x] Keep atomic filesystem replacement as an implementation detail; do not introduce a hypothetical storage-adapter seam
-  - [ ] Lock corrupt, stale, interrupted, failed, sticky-failure, and incremental-success behavior with focused tests
+  - [x] Lock corrupt, stale, interrupted, failed, sticky-failure, and incremental-success behavior with focused tests
 - [ ] Concentrate Git change knowledge (**worth scheduling**)
   - [ ] Give project and workspace callers one interface for root validation, merge-base selection, diffs, untracked files, and exclusions
   - [ ] Centralize Git subprocess errors and no-merge-base outcomes

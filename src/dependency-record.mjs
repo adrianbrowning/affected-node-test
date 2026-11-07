@@ -35,8 +35,53 @@ function isValidRecord(record) {
         Array.isArray(edge) && edge.length === 2 && edge.every((part) => typeof part === 'string')));
 }
 
-export function writeDependencyRecord(path, record) {
+function writeDependencyRecord(path, record) {
   writeJsonAtomically(path, { ...record, version: recordVersion });
+}
+
+export function applyDependencyRun(path, {
+  dependencyStateForTest,
+  metadataForGraph,
+  previous,
+  result,
+  tests,
+}) {
+  const {
+    completedTests,
+    failedTests,
+    interrupted,
+    resultGraph,
+    unresolvedStaticTests = [],
+  } = result;
+  if (interrupted) return { signal: interrupted, status: 'interrupted' };
+
+  if (!failedTests.length) {
+    const dependencyStates = { ...(previous?.dependencyStates ?? {}) };
+    const unresolved = new Set(previous?.unresolvedStaticTests ?? []);
+    for (const test of completedTests) dependencyStates[test] = dependencyStateForTest(resultGraph, test);
+    for (const test of completedTests) unresolved.delete(test);
+    for (const test of unresolvedStaticTests) unresolved.add(test);
+    writeDependencyRecord(path, {
+      ...metadataForGraph(resultGraph),
+      dependencyStates,
+      failedTests: [],
+      graph: resultGraph,
+      tests,
+      unresolvedStaticTests: [...unresolved].sort(),
+    });
+    return { status: 'passed' };
+  }
+
+  if (previous) {
+    const stickyFailures = new Set(previous.failedTests);
+    for (const test of completedTests) stickyFailures.delete(test);
+    for (const test of failedTests) stickyFailures.add(test);
+    writeDependencyRecord(path, {
+      ...previous,
+      failedTests: [...stickyFailures].sort(),
+    });
+  }
+  return { status: 'failed' };
 }
 
 export function loadDependencyRecord(path, expected) {
