@@ -292,7 +292,7 @@ function graphForTest(test: string) {
   return new Promise<GraphTestResult>((resolveResult) => {
     const startedAt = performance.now();
     const imports = [hook, ...[...setupFiles].map((file) => join(root, file))]
-      .flatMap((file) => ['--import', file]);
+      .flatMap((file) => ['--import', pathToFileURL(file).href]);
     const child = spawn(process.execPath,
       [...projectConfig.nodeArgs, ...imports, '--test', join(root, test)],
       { cwd: root, detached: process.platform !== 'win32', stdio: ['inherit', 'pipe', 'pipe'], env: { ...process.env,

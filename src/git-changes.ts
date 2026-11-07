@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 
 const normal = (path: string) => path.split(sep).join('/');
@@ -18,7 +19,11 @@ function gitText(root: string, args: string[]) {
 
 function validateGitRoot(root: string) {
   const gitRoot = gitText(root, ['rev-parse', '--show-toplevel']).trim();
-  if (resolve(gitRoot) !== resolve(root)) {
+  const canonical = (path: string) => {
+    const resolved = realpathSync.native(resolve(path));
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  if (canonical(gitRoot) !== canonical(root)) {
     throw new Error('Run affected from the Git repository root.');
   }
 }

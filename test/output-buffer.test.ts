@@ -37,7 +37,9 @@ test('large worker output spills securely, streams exactly, and cleans up', asyn
     output.append('1234');
     output.append('56789');
     assert.deepEqual(readdirSync(directory), ['stderr.log']);
-    assert.equal(statSync(join(directory, 'stderr.log')).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      assert.equal(statSync(join(directory, 'stderr.log')).mode & 0o777, 0o600);
+    }
     const captured = capture();
     await output.writeTo(captured.destination);
     assert.equal(captured.value(), '123456789');
