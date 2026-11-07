@@ -12,6 +12,7 @@ import { parseConcurrency } from '../src/concurrency.mjs';
 import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.mjs';
 import { dependenciesForTest } from '../src/dependency-graph.mjs';
 import { diagnose } from '../src/doctor.mjs';
+import { createOutputBuffer } from '../src/output-buffer.mjs';
 import { buildStaticGraph } from '../src/static-graph.mjs';
 import { getGitChanges } from '../src/git-changes.mjs';
 import {
@@ -242,13 +243,11 @@ function graphForTest(test) {
       { cwd: root, detached: process.platform !== 'win32', stdio: ['inherit', 'pipe', 'pipe'], env: { ...process.env,
         AFFECTED_TESTS_EDGES_FILE: log, AFFECTED_TESTS_ROOT: root } });
     activeChildren.add(child);
-    let stdout = '';
-    let stderr = '';
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => { stdout += chunk; });
-    child.stderr.on('data', (chunk) => { stderr += chunk; });
-    child.on('error', (error) => { stderr += `${error.stack ?? error}\n`; });
+    const stdout = createOutputBuffer({ directory: folder, name: 'stdout' });
+    const stderr = createOutputBuffer({ directory: folder, name: 'stderr' });
+    child.stdout.on('data', (chunk) => stdout.append(chunk));
+    child.stderr.on('data', (chunk) => stderr.append(chunk));
+    child.on('error', (error) => stderr.append(`${error.stack ?? error}\n`));
     child.on('close', (code) => {
       activeChildren.delete(child);
       try {
@@ -270,9 +269,13 @@ function graphForTest(test) {
           stdout,
           stderr,
           unresolvedStatic: staticGraph.unresolved,
+          cleanup: () => rmSync(folder, { recursive: true, force: true }),
         });
-      } finally {
+      } catch (error) {
+        stdout.cleanup();
+        stderr.cleanup();
         rmSync(folder, { recursive: true, force: true });
+        throw error;
       }
     });
   });
@@ -344,8 +347,14 @@ async function runTests(tests, oldGraph = {}, historicalDurations = {}) {
     const result = results.get(test);
     if (!result) continue;
     (options.output === 'json' ? console.error : console.log)(`\n▶ ${test}`);
-    if (result.stdout) (options.output === 'json' ? process.stderr : process.stdout).write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
+    try {
+      await result.stdout.writeTo(options.output === 'json' ? process.stderr : process.stdout);
+      await result.stderr.writeTo(process.stderr);
+    } finally {
+      result.stdout.cleanup();
+      result.stderr.cleanup();
+      result.cleanup();
+    }
     resultGraph[test] = result.edges;
     completedTests.push(test);
     durations[test] = result.durationMs;

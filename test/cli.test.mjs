@@ -1428,6 +1428,38 @@ test('--concurrency bounds parallel execution and preserves output order', () =>
   }
 });
 
+test('large worker output preserves reporting and temporary-file cleanup on pass and failure', () => {
+  const cwd = makeRepository();
+  const testPath = join(cwd, 'test', 'value.test.mjs');
+  const temporaryDirectories = edgeTemporaryDirectories();
+  writeFileSync(testPath, `${readFileSync(testPath, 'utf8')}\nconsole.log('spill:' + 'x'.repeat(300_000));\n`);
+  git(cwd, 'add', 'test/value.test.mjs');
+  git(cwd, 'commit', '-qm', 'add large output');
+  try {
+    const passing = run(cwd, 'baseline', '--concurrency', '1');
+    assert.equal(passing.status, 0, passing.stderr);
+    assert.match(passing.stdout, /spill:x{100}/);
+    assert.deepEqual(edgeTemporaryDirectories(), temporaryDirectories);
+
+    writeFileSync(testPath, `${readFileSync(testPath, 'utf8')}\nthrow new Error('after spill');\n`);
+    const failing = run(cwd, 'affected', '--concurrency', '1');
+    assert.equal(failing.status, 1);
+    assert.match(failing.stdout, /spill:x{100}/);
+    assert.match(failing.stdout, /after spill/);
+    assert.deepEqual(edgeTemporaryDirectories(), temporaryDirectories);
+
+    writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({
+      nodeArgs: ['--definitely-not-a-node-option'],
+    }));
+    const startupFailure = run(cwd, 'baseline', '--concurrency', '1');
+    assert.equal(startupFailure.status, 1);
+    assert.match(`${startupFailure.stdout}${startupFailure.stderr}`, /bad option|not allowed|unknown option/i);
+    assert.deepEqual(edgeTemporaryDirectories(), temporaryDirectories);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('historically slow tests start first while reporting remains deterministic', () => {
   const cwd = makeParallelRepository({ delays: { a: 50, b: 50, c: 50 } });
   const tracker = join(cwd, 'processes.log');

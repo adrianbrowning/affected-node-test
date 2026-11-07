@@ -88,6 +88,7 @@ pnpm exec affected-node-test affected --project 'packages/api-*'
 - Missing/stale cache, missing merge bases, removed tests, unknown non-test JS files, and key configuration changes cause a full run. Newly discovered tests run incrementally and extend the existing record.
 - A failed run preserves the previous dependency graph, records the failing test files, and keeps selecting them until they pass.
 - Test files run in a bounded worker pool. `--concurrency N` sets an exact size; `--concurrency P%` uses `floor(P% × available parallelism)` with a minimum of one worker. Percentages must be greater than zero and at most 100%. The default is the smaller of four and the runtime's available parallelism. Successful durations are cached so historically slower tests start first, while buffered reporting remains deterministic.
+- Each worker stream stays in memory through 256 KiB, then spills to a mode-`0600` file inside its secure temporary directory. Spilled output is streamed back in deterministic test-file order and removed after success, failure, interruption, or worker startup failure.
 - `SIGINT` and `SIGTERM` stop active test processes, clean temporary edge logs, preserve the previous cache, and use conventional exit codes.
 - Watch events are debounced, cache/build/dependency directories are ignored, and changes arriving during a run are queued for the next serialized rerun.
 

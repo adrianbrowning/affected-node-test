@@ -95,7 +95,7 @@ These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior 
 - [ ] Add [`last-failed`](https://github.com/adrianbrowning/affected-node-test/issues/11)
 - [x] Add [percentage concurrency](https://github.com/adrianbrowning/affected-node-test/issues/13)
 - [x] Add optional [workspace project filtering](https://github.com/adrianbrowning/affected-node-test/issues/14)
-- [ ] [Spill large buffered child output to temporary files](https://github.com/adrianbrowning/affected-node-test/issues/17)
+- [x] [Spill large buffered child output to temporary files](https://github.com/adrianbrowning/affected-node-test/issues/17)
 - [ ] Work through the sliced [developer experience roadmap](developer-experience-roadmap.md)
 
 ## Release readiness
