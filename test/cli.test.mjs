@@ -441,6 +441,39 @@ test('workspace affected routes Git changes only to their owning project', () =>
   }
 });
 
+test('watch emits structured readiness over IPC', { timeout: 30_000 }, async () => {
+  const cwd = makeRepository();
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const child = spawn(process.execPath, [cli, 'watch', '--concurrency', '1'], {
+    cwd,
+    env,
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+  });
+  const messages = [];
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  child.on('message', (message) => { messages.push(message); });
+  const closed = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
+  try {
+    await waitForProcessOutput(child, () => `${stdout}${stderr}\n${JSON.stringify(messages)}`,
+      () => messages.some((message) => message?.type === 'affected-node-test:watch-ready'), 15_000);
+    assert.match(stdout, /Watching for changes\./);
+
+    child.kill('SIGTERM');
+    const result = await closed;
+    assert.equal(result.code, 143, stderr);
+  } finally {
+    if (child.exitCode === null) child.kill('SIGKILL');
+    await closed;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('workspace watch coordinates project reruns and shutdown', { timeout: 60_000 }, async () => {
   const cwd = makeWorkspace();
   const env = { ...process.env };

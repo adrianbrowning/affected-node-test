@@ -9,6 +9,7 @@ import { writeJsonAtomically } from '../src/cache.mjs';
 import { configurationFingerprint } from '../src/config.mjs';
 import { buildStaticGraph } from '../src/static-graph.mjs';
 import { runWorkspace } from '../src/workspace.mjs';
+import { sendWatchReady } from '../src/watch-protocol.mjs';
 import {
   conventionDependencyPatterns,
   loadProjectConfig,
@@ -684,6 +685,7 @@ async function watchMode() {
     stopWatching?.();
   });
   console.log('Watching for changes.');
+  sendWatchReady();
   await new Promise((resolveStop) => {
     stopWatching = (signal) => {
       if (stopped) return;

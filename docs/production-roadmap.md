@@ -56,7 +56,7 @@ This roadmap targets parity with Vitest's affected-test selection subsystem, not
 These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior with integration tests while changing module ownership. Suggested order: workspace lifecycle, dependency records, Git changes, then selection/run consolidation.
 
 - [ ] Deepen workspace orchestration (**strong recommendation**)
-  - [ ] Replace parsing the child text `Watching for changes.` with a structured readiness and lifecycle protocol
+  - [x] Replace parsing the child text `Watching for changes.` with a structured IPC readiness protocol
   - [ ] Move abort, shutdown, sibling-failure, and exit-code policy behind the workspace module interface
   - [ ] Keep finite-run and persistent-watch process adapters internal to one workspace module
   - [ ] Exercise readiness, failure, and shutdown through the same command-facing interface

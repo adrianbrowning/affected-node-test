@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { loadProjectConfig } from './project-config.mjs';
+import { watchReadyMessageType } from './watch-protocol.mjs';
 
 const normal = (path) => path.split(sep).join('/');
 
@@ -30,7 +31,7 @@ function isProjectCachePath(project, projectPath) {
     projectPath.startsWith(`${project.cacheDirectoryPath}/`);
 }
 
-function prefixLines(stream, destination, projectPath, onLine = () => {}) {
+function prefixLines(stream, destination, projectPath) {
   let buffer = '';
   stream.setEncoding('utf8');
   stream.on('data', (chunk) => {
@@ -40,13 +41,11 @@ function prefixLines(stream, destination, projectPath, onLine = () => {}) {
       const line = buffer.slice(0, newline);
       buffer = buffer.slice(newline + 1);
       destination.write(`[${projectPath}] ${line}\n`);
-      onLine(line);
     }
   });
   return () => {
     if (!buffer) return;
     destination.write(`[${projectPath}] ${buffer}\n`);
-    onLine(buffer);
     buffer = '';
   };
 }
@@ -72,15 +71,16 @@ function runWorkspaceWatch({ projects, args, cliPath, signal }) {
       const child = spawn(process.execPath, [cliPath, 'watch', ...args], {
         cwd: project.root,
         env: process.env,
-        stdio: ['inherit', 'pipe', 'pipe'],
+        stdio: ['inherit', 'pipe', 'pipe', 'ipc'],
       });
       children.push(child);
-      const flushStdout = prefixLines(child.stdout, process.stdout, project.path, (line) => {
-        if (line !== 'Watching for changes.' || readyProjects.has(project.path)) return;
+      const flushStdout = prefixLines(child.stdout, process.stdout, project.path);
+      const flushStderr = prefixLines(child.stderr, process.stderr, project.path);
+      child.on('message', (message) => {
+        if (message?.type !== watchReadyMessageType || readyProjects.has(project.path)) return;
         readyProjects.add(project.path);
         if (readyProjects.size === projects.length) console.log(`Watching in ${projects.length} projects.`);
       });
-      const flushStderr = prefixLines(child.stderr, process.stderr, project.path);
       child.on('error', (error) => {
         console.error(`[${project.path}] ${error.stack ?? error}`);
         stop(1);
