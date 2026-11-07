@@ -86,6 +86,7 @@ These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior 
 - [ ] Consider percentage concurrency and `last-failed`
 - [ ] Consider optional workspace project filtering
 - [ ] Spill large buffered child output to temporary files
+- [ ] Work through the sliced [developer experience roadmap](developer-experience-roadmap.md)
 
 ## Release readiness
 
