@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { selectTestsForFiles, selectTestsSinceLastRun } from '../src/selection-run.mjs';
+import {
+  executeSelection,
+  selectTestsForFiles,
+  selectTestsSinceLastRun,
+} from '../src/selection-run.mjs';
 
 const tests = ['test/a.test.mjs', 'test/b.test.mjs'];
 const record = {
@@ -113,4 +117,48 @@ test('mtime selection returns the same normalized targeted outcome', () => {
     messages: [],
     tests: ['test/b.test.mjs'],
   });
+});
+
+test('selection execution owns conservative and targeted safety sequencing', async () => {
+  const events = [];
+  const runtime = {
+    baseline: async () => events.push('baseline'),
+    execute: async (selectedTests) => events.push(`execute:${selectedTests.join(',')}`),
+    log: (message) => events.push(`log:${message}`),
+  };
+
+  await executeSelection({
+    ...runtime,
+    emptyMessage: 'No affected tests found.',
+    selection: { kind: 'baseline', message: 'Safety fallback.' },
+    totalTests: 2,
+  });
+  assert.deepEqual(events, ['log:Safety fallback.', 'baseline']);
+
+  events.length = 0;
+  await executeSelection({
+    ...runtime,
+    emptyMessage: 'No affected tests found.',
+    selectedLabel: 'related test file(s)',
+    selection: {
+      kind: 'selected',
+      messages: ['Mapped fixture change.'],
+      tests: ['test/a.test.mjs'],
+    },
+    totalTests: 2,
+  });
+  assert.deepEqual(events, [
+    'log:Mapped fixture change.',
+    'log:Selected 1/2 related test file(s)',
+    'execute:test/a.test.mjs',
+  ]);
+
+  events.length = 0;
+  await executeSelection({
+    ...runtime,
+    emptyMessage: 'No affected tests found.',
+    selection: { kind: 'selected', messages: [], tests: [] },
+    totalTests: 2,
+  });
+  assert.deepEqual(events, ['log:No affected tests found.']);
 });

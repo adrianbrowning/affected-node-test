@@ -10,7 +10,11 @@ import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-reco
 import { dependenciesForTest } from '../src/dependency-graph.mjs';
 import { buildStaticGraph } from '../src/static-graph.mjs';
 import { getGitChanges } from '../src/git-changes.mjs';
-import { selectTestsForFiles, selectTestsSinceLastRun } from '../src/selection-run.mjs';
+import {
+  executeSelection,
+  selectTestsForFiles,
+  selectTestsSinceLastRun,
+} from '../src/selection-run.mjs';
 import { runWorkspace } from '../src/workspace.mjs';
 import { sendWatchReady } from '../src/watch-protocol.mjs';
 import {
@@ -382,6 +386,24 @@ async function baseline() {
   console.log(`Building graph from ${tests.length} test file(s)`);
   finishRun(tests, await runTests(tests));
 }
+async function executeSelectionOutcome(selection, {
+  contextMessages,
+  emptyMessage,
+  saved,
+  selectedLabel,
+  tests,
+}) {
+  await executeSelection({
+    baseline,
+    contextMessages,
+    emptyMessage,
+    execute: async (selectedTests) => finishRun(tests, await runTests(selectedTests, saved.graph), saved),
+    log: console.log,
+    selection,
+    selectedLabel,
+    totalTests: tests.length,
+  });
+}
 function clearCache() {
   rmSync(cachePath, { force: true });
   console.log(`Cleared cache: ${normal(relative(root, cachePath))}`);
@@ -430,11 +452,12 @@ async function sinceLastRun() {
   const saved = loadUsableCache(tests);
   if (!saved) return baseline();
   const selection = selectTestsSinceLastRun({ dependencyStateChanged, record: saved, tests });
-  for (const message of selection.messages) console.log(message);
-  if (!selection.tests.length) { console.log('No tests changed since last run.'); return; }
-  const selectedTests = selection.tests;
-  console.log(`Selected ${selectedTests.length}/${tests.length} test file(s) since last run`);
-  finishRun(tests, await runTests(selectedTests, saved.graph), saved);
+  await executeSelectionOutcome(selection, {
+    emptyMessage: 'No tests changed since last run.',
+    saved,
+    selectedLabel: 'test file(s) since last run',
+    tests,
+  });
 }
 async function related(files) {
   if (!files.length) fail('Usage: affected-node-test related <file...> [--concurrency N]');
@@ -449,15 +472,13 @@ async function related(files) {
   const saved = loadUsableCache(tests);
   if (!saved) return baseline();
   const selection = selectTestsForFiles({ config: projectConfig, files: repositoryFiles, record: saved, tests });
-  if (selection.kind === 'baseline') {
-    console.log(selection.message); return baseline();
-  }
-  for (const message of selection.messages) console.log(message);
-  console.log(`Related files: ${repositoryFiles.join(', ')}`);
-  if (!selection.tests.length) { console.log('No related tests found.'); return; }
-  const selectedTests = selection.tests;
-  console.log(`Selected ${selectedTests.length}/${tests.length} related test file(s)`);
-  finishRun(tests, await runTests(selectedTests, saved.graph), saved);
+  await executeSelectionOutcome(selection, {
+    contextMessages: [`Related files: ${repositoryFiles.join(', ')}`],
+    emptyMessage: 'No related tests found.',
+    saved,
+    selectedLabel: 'related test file(s)',
+    tests,
+  });
 }
 async function affected(ref) {
   const changes = diffFiles(ref);
@@ -469,16 +490,14 @@ async function affected(ref) {
   }
   if (!changes.length && !saved.failedTests.length) { console.log('No changed files.'); return; }
   const selection = selectTestsForFiles({ config: projectConfig, files: changes, record: saved, tests });
-  if (selection.kind === 'baseline') {
-    console.log(selection.message); return baseline();
-  }
-  for (const message of selection.messages) console.log(message);
-  if (changes.length) console.log(`Changed files: ${changes.join(', ')}`);
-  else console.log(`No changed files; rerunning ${saved.failedTests.length} previously failing test file(s).`);
-  if (!selection.tests.length) { console.log('No affected tests found.'); return; }
-  const selectedTests = selection.tests;
-  console.log(`Selected ${selectedTests.length}/${tests.length} test file(s)`);
-  finishRun(tests, await runTests(selectedTests, saved.graph), saved);
+  await executeSelectionOutcome(selection, {
+    contextMessages: [changes.length
+      ? `Changed files: ${changes.join(', ')}`
+      : `No changed files; rerunning ${saved.failedTests.length} previously failing test file(s).`],
+    emptyMessage: 'No affected tests found.',
+    saved,
+    tests,
+  });
 }
 async function watchMode() {
   await baseline();
@@ -506,19 +525,11 @@ async function watchMode() {
         await baseline();
       } else {
         const selection = selectTestsForFiles({ config: projectConfig, files, record: saved, tests });
-        if (selection.kind === 'baseline') {
-          console.log(selection.message);
-          await baseline();
-        } else {
-          for (const message of selection.messages) console.log(message);
-          if (!selection.tests.length) {
-            console.log('No related tests found.');
-          } else {
-            const selectedTests = selection.tests;
-            console.log(`Selected ${selectedTests.length}/${tests.length} test file(s)`);
-            finishRun(tests, await runTests(selectedTests, saved.graph), saved);
-          }
-        }
+        await executeSelectionOutcome(selection, {
+          emptyMessage: 'No related tests found.',
+          saved,
+          tests,
+        });
       }
     } catch (error) {
       console.error(`Watch rerun failed: ${error.stack ?? error}`);

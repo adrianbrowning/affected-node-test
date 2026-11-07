@@ -74,8 +74,10 @@ These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior 
     - [x] Normalize Git, explicit-file, and watch file-selection outcomes
     - [x] Normalize mtime selection with the same outcome interface
   - [ ] Centralize cache loading, conservative fallback, targeted execution, messages, and record updates
-  - [ ] Keep provider adapters at the real seam while hiding safety sequencing inside the module
-  - [ ] Prove `affected`, `related`, `since-last-run`, and watch retain their current behavior through command-level tests
+    - [x] Centralize conservative fallback, targeted execution, messages, and record updates
+    - [ ] Centralize cache loading and cache-miss fallback
+  - [x] Keep provider adapters at the real seam while hiding safety sequencing inside the module
+  - [x] Prove `affected`, `related`, `since-last-run`, and watch retain their current behavior through command-level tests
 
 ## P2: efficiency and ergonomics
 

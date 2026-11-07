@@ -1,6 +1,31 @@
 import { dependenciesForTest } from './dependency-graph.mjs';
 import { matchesPatterns } from './project-config.mjs';
 
+export async function executeSelection({
+  baseline,
+  contextMessages = [],
+  emptyMessage,
+  execute,
+  log,
+  selection,
+  selectedLabel = 'test file(s)',
+  totalTests,
+}) {
+  if (selection.kind === 'baseline') {
+    log(selection.message);
+    await baseline();
+    return;
+  }
+  for (const message of selection.messages) log(message);
+  for (const message of contextMessages) log(message);
+  if (!selection.tests.length) {
+    log(emptyMessage);
+    return;
+  }
+  log(`Selected ${selection.tests.length}/${totalTests} ${selectedLabel}`);
+  await execute(selection.tests);
+}
+
 export function selectTestsSinceLastRun({ dependencyStateChanged, record, tests }) {
   const selected = new Set(record.failedTests);
   for (const test of tests) {
