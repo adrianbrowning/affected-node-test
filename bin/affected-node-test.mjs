@@ -183,7 +183,7 @@ function graphForTest(test) {
     const imports = [hook, ...[...setupFiles].map((file) => join(root, file))]
       .flatMap((file) => ['--import', file]);
     const child = spawn(process.execPath,
-      [...imports, '--test', join(root, test)],
+      [...projectConfig.nodeArgs, ...imports, '--test', join(root, test)],
       { cwd: root, detached: process.platform !== 'win32', stdio: ['inherit', 'pipe', 'pipe'], env: { ...process.env,
         AFFECTED_TESTS_EDGES_FILE: log, AFFECTED_TESTS_ROOT: root } });
     activeChildren.add(child);
@@ -541,12 +541,12 @@ function selectForFiles(tests, saved, files) {
     known.add(parent);
     known.add(child);
   }
-  const jsChange = (path) => /\.[cm]?js$/.test(path);
-  const unknownCode = files.filter((path) => jsChange(path) && !known.has(path));
+  const codeChange = (path) => /\.(?:[cm]?[jt]s|[jt]sx)$/.test(path);
+  const unknownCode = files.filter((path) => codeChange(path) && !known.has(path));
   if (unknownCode.length) {
-    return { fullRunMessage: `Unknown JS file changed (${unknownCode.join(', ')}); running full suite.` };
+    return { fullRunMessage: `Unknown code file changed (${unknownCode.join(', ')}); running full suite.` };
   }
-  if (files.some(jsChange)) {
+  if (files.some(codeChange)) {
     for (const test of saved.unresolvedStaticTests) selected.add(test);
   }
   const messages = [];

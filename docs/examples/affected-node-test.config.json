@@ -5,6 +5,7 @@
   "envFiles": [".env", ".env.test"],
   "forceRerunTriggers": ["config/**"],
   "globalSetupFiles": ["test/global-setup.mjs"],
+  "nodeArgs": ["--import", "tsx"],
   "projectDependencies": ["test/setup.mjs", ".env*", "snapshots/**"],
   "setupFiles": ["test/setup.mjs"],
   "watchTriggerPatterns": [

@@ -49,7 +49,7 @@ This roadmap targets parity with Vitest's affected-test selection subsystem, not
   - [x] Route explicit related-file selection to owning projects
   - [x] Route Git affected selection to owning projects
   - [x] Coordinate persistent watch mode across projects
-- [ ] Support configurable discovery and decide the TypeScript/JSX loader contract
+- [x] Support configurable discovery and define the TypeScript/JSX loader contract
 
 ## P2: efficiency and ergonomics
 

@@ -79,11 +79,11 @@ export function buildStaticGraph(root, test, roots) {
     const repositoryPath = pending.pop();
     if (visited.has(repositoryPath)) continue;
     visited.add(repositoryPath);
-    if (!/\.[cm]?js$/.test(repositoryPath)) continue;
+    if (!/\.(?:[cm]?[jt]s|[jt]sx)$/.test(repositoryPath)) continue;
     const absolutePath = new URL(repositoryPath, `${pathToFileURL(root).href}/`);
     let parsed;
     try {
-      const sourceType = repositoryPath.endsWith('.cjs') ? 'commonjs' : 'module';
+      const sourceType = /\.c[jt]s$/.test(repositoryPath) ? 'commonjs' : 'module';
       parsed = importsIn(readFileSync(absolutePath, 'utf8'), sourceType);
     } catch {
       unresolved = true;

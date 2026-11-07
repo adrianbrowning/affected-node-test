@@ -139,6 +139,36 @@ function makeCommonJsRepository() {
   return cwd;
 }
 
+function makeTypeScriptRepository() {
+  const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-typescript-'));
+  mkdirSync(join(cwd, 'src'));
+  mkdirSync(join(cwd, 'test'));
+  writeFileSync(join(cwd, 'package.json'), '{"type":"module"}\n');
+  writeFileSync(join(cwd, 'src', 'value.ts'), 'export const value: number = 1;\n');
+  writeFileSync(join(cwd, 'test', 'preload.mjs'), "process.env.AFFECTED_PRELOAD = 'ready';\n");
+  writeFileSync(join(cwd, 'test', 'value.test.ts'), [
+    "import test from 'node:test';",
+    "import assert from 'node:assert/strict';",
+    "import { value } from '../src/value.ts';",
+    "test('typed value', () => {",
+    "  assert.equal(process.env.AFFECTED_PRELOAD, 'ready');",
+    "  assert.equal(value, 1);",
+    "});",
+    '',
+  ].join('\n'));
+  writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({
+    include: ['test/**/*.test.ts'],
+    nodeArgs: ['--import', './test/preload.mjs'],
+    projectDependencies: ['test/preload.mjs'],
+  }));
+  git(cwd, 'init', '-q');
+  git(cwd, 'config', 'user.email', 'tests@example.invalid');
+  git(cwd, 'config', 'user.name', 'Tests');
+  git(cwd, 'add', '.');
+  git(cwd, 'commit', '-qm', 'initial');
+  return cwd;
+}
+
 function makeParallelRepository() {
   const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-parallel-'));
   mkdirSync(join(cwd, 'test'));
@@ -654,7 +684,7 @@ test('an untracked JavaScript file triggers a conservative full run', () => {
 
     const affected = run(cwd, 'affected', 'HEAD');
     assert.equal(affected.status, 0, affected.stderr);
-    assert.match(affected.stdout, /Unknown JS file changed \(src\/new\.mjs\); running full suite\./);
+    assert.match(affected.stdout, /Unknown code file changed \(src\/new\.mjs\); running full suite\./);
     assert.match(affected.stdout, /Building graph from 1 test file\(s\)/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -672,7 +702,7 @@ test('a renamed dependency triggers a conservative full run', () => {
 
     const affected = run(cwd, 'affected', 'HEAD');
     assert.equal(affected.status, 0, affected.stderr);
-    assert.match(affected.stdout, /Unknown JS file changed \(src\/renamed\.mjs\); running full suite\./);
+    assert.match(affected.stdout, /Unknown code file changed \(src\/renamed\.mjs\); running full suite\./);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -845,6 +875,23 @@ test('configured include and exclude patterns control test discovery', () => {
     assert.match(baseline.stdout, /Building graph from 1 test file\(s\)/);
     assert.match(baseline.stdout, /▶ specs\/custom\.check\.mjs/);
     assert.doesNotMatch(baseline.stdout, /skip\.check\.mjs|test\/value\.test\.mjs/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('configured node arguments execute discovered TypeScript tests', () => {
+  const cwd = makeTypeScriptRepository();
+  try {
+    const baseline = run(cwd, 'baseline');
+    assert.equal(baseline.status, 0, baseline.stderr);
+    assert.match(baseline.stdout, /✔ typed value/);
+    assert.match(readFileSync(join(cwd, '.affected-tests', 'graph.json'), 'utf8'), /src\/value\.ts/);
+
+    writeFileSync(join(cwd, 'src', 'value.ts'), 'export const value: number = 1; \/\/ changed\n');
+    const affected = run(cwd, 'affected', 'HEAD');
+    assert.equal(affected.status, 0, affected.stderr);
+    assert.match(affected.stdout, /Selected 1\/1 test file\(s\)/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

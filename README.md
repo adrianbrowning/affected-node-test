@@ -62,6 +62,7 @@ An optional `affected-node-test.config.json` at the repository root controls cac
   "envFiles": [".env", ".env.test"],
   "forceRerunTriggers": ["config/**"],
   "globalSetupFiles": ["test/global-setup.mjs"],
+  "nodeArgs": ["--import", "tsx"],
   "projectDependencies": ["test/setup.mjs", ".env*", "snapshots/**"],
   "setupFiles": ["test/setup.mjs"],
   "watchTriggerPatterns": [
@@ -79,6 +80,7 @@ An optional `affected-node-test.config.json` at the repository root controls cac
 - `envFiles` resolves repository-relative globs and loads every match, in deterministic order, before global setup and test workers. Loading follows Node's native `process.loadEnvFile()` semantics.
 - `forceRerunTriggers` runs the full suite when any changed path matches.
 - `globalSetupFiles` resolves repository-relative globs and loads every match once before test workers start. Each module must export `setup()` or a default setup function; it may return a teardown function or export `teardown()`. Teardowns run in reverse order after workers finish.
+- `nodeArgs` passes ordered arguments to every test child before the built-in graph hook and `--test`. Use it for user-supplied loaders or import hooks, for example `["--import", "tsx"]`; no TypeScript or JSX transformer is bundled.
 - `projectDependencies` content-fingerprints every matching file with the graph. Added, deleted, modified, or already-committed changes invalidate the cache and run the full suite.
 - `setupFiles` resolves repository-relative globs and preloads every match into each test process. Setup modules and their observed transitive imports are recorded as dependencies of every test and content-fingerprinted across commits.
 - `watchTriggerPatterns` maps a changed non-module path glob to one or more test-file globs. All matching mappings are combined with graph-affected and previously failing tests.
@@ -91,6 +93,8 @@ An optional `affected-node-test.config.json` at the repository root controls cac
 - Resolved environment files are content-fingerprinted, so additions, deletions, and committed content changes run the full suite.
 - Files under `__mocks__` or `__snapshots__`, plus all `*.snap` files, are automatically treated as project-wide convention dependencies. Inventory or content changes run the full suite.
 - Custom runner and serializer dependencies have no universal native-runner filename convention; declare them through `projectDependencies`.
+- Loader or import-hook files inside the project must also be declared through `projectDependencies`. Package-based loaders are covered by manifest and lockfile fingerprints.
+- TypeScript, TSX, and JSX files can be discovered with `include`. Runtime-resolved imports are recorded normally; syntax Acorn cannot parse is marked unresolved and uses conservative affected selection. In-source tests have no separate mode: an `include` pattern may opt source files in, and every matched file is passed to `node --test`.
 - The root configuration is non-executable JSON. Add any referenced configuration fragments to `projectDependencies` so their contents are tracked.
 
 ### Workspaces
@@ -111,6 +115,6 @@ Project roots are validated, deduplicated, rejected when overlapping, and run in
 - Computed imports and parse failures are marked unresolved. For Git selection, any JavaScript change conservatively selects tests with unresolved static imports. Non-Git state selection cannot discover a brand-new computed target that was never recorded.
 - Each test file runs in its own Node process rather than using native multi-file test concurrency. Output is buffered and printed in deterministic test-file order.
 - The graph only tracks `file:` dependencies **inside the Git repository**. Changes in external linked packages are not handled.
-- Non-JavaScript data/config files read through `fs`, custom transpilation-loader syntax unsupported by Acorn, and some worker process patterns require explicit configuration or a full run.
+- Non-module data/config files read through `fs` and some worker process patterns require explicit configuration or a full run. User-transformed TypeScript/JSX syntax unsupported by Acorn retains runtime edges and deliberately triggers conservative code-change selection.
 - The naive hook appends a line for every import; production code should batch edges and reduce synchronous I/O.
 - A changed non-JavaScript file that tests read via `fs` might not trigger a selected run. Full-suite CI remains essential.
