@@ -53,6 +53,15 @@ test('dependency record module owns persistence and compatibility decisions', ()
     assert.equal(loaded.record.version, 10);
     assert.deepEqual(loaded.record.graph, record.graph);
 
+    assert.deepEqual(loadDependencyRecord(path, {
+      ...current,
+      tests: [...current.tests, 'test/new.test.mjs'],
+    }).record, loaded.record);
+
+    assert.deepEqual(loadDependencyRecord(path, { ...current, tests: [] }), {
+      reason: 'Test files or runtime changed; running full suite.',
+    });
+
     assert.deepEqual(loadDependencyRecord(path, { ...current, node: 'other-node' }), {
       reason: 'Test files or runtime changed; running full suite.',
     });

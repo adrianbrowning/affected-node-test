@@ -9,6 +9,10 @@ import {
 
 const tests = ['test/a.test.mjs', 'test/b.test.mjs'];
 const record = {
+  dependencyStates: {
+    'test/a.test.mjs': {},
+    'test/b.test.mjs': {},
+  },
   failedTests: ['test/b.test.mjs'],
   graph: {
     'test/a.test.mjs': [
@@ -68,6 +72,21 @@ test('file selection returns normalized targeted and conservative outcomes', () 
     kind: 'selected',
     messages: ['Watch trigger matched fixtures/value.txt; selected 1 mapped test file(s).'],
     tests: ['test/a.test.mjs'],
+  });
+
+  assert.deepEqual(selectTestsForFiles({
+    config,
+    files: [],
+    record: {
+      ...record,
+      dependencyStates: { 'test/a.test.mjs': {} },
+      failedTests: [],
+    },
+    tests,
+  }), {
+    kind: 'selected',
+    messages: [],
+    tests: ['test/b.test.mjs'],
   });
 });
 

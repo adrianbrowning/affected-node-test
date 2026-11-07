@@ -1232,6 +1232,67 @@ test('since-last-run selects changed dependencies without Git', () => {
   }
 });
 
+test('new tests run incrementally in Git and mtime modes', () => {
+  const cwd = makeRepository();
+  const writeTest = (name) => writeFileSync(join(cwd, 'test', `${name}.test.mjs`), [
+    "import test from 'node:test';",
+    "import assert from 'node:assert/strict';",
+    "import { value } from '../src/value.mjs';",
+    `test('${name}', () => assert.equal(value, 1));`,
+    '',
+  ].join('\n'));
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+
+    writeTest('added');
+    const affected = run(cwd, 'affected');
+    assert.equal(affected.status, 0, affected.stderr);
+    assert.match(affected.stdout, /Selected 1\/2 test file\(s\)/);
+    assert.match(affected.stdout, /▶ test\/added\.test\.mjs/);
+    assert.doesNotMatch(affected.stdout, /▶ test\/value\.test\.mjs/);
+
+    writeTest('later');
+    const sinceLastRun = run(cwd, 'since-last-run');
+    assert.equal(sinceLastRun.status, 0, sinceLastRun.stderr);
+    assert.match(sinceLastRun.stdout, /Selected 1\/3 test file\(s\) since last run/);
+    assert.match(sinceLastRun.stdout, /▶ test\/later\.test\.mjs/);
+    assert.doesNotMatch(sinceLastRun.stdout, /▶ test\/(?:added|value)\.test\.mjs/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('a failing new test remains an incremental sticky failure', () => {
+  const cwd = makeRepository();
+  const addedTest = join(cwd, 'test', 'added.test.mjs');
+  const source = (expected) => [
+    "import test from 'node:test';",
+    "import assert from 'node:assert/strict';",
+    "import { value } from '../src/value.mjs';",
+    `test('added', () => assert.equal(value, ${expected}));`,
+    '',
+  ].join('\n');
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+    writeFileSync(addedTest, source(2));
+
+    const failed = run(cwd, 'affected');
+    assert.equal(failed.status, 1);
+    assert.match(failed.stdout, /▶ test\/added\.test\.mjs/);
+    assert.doesNotMatch(failed.stdout, /▶ test\/value\.test\.mjs/);
+
+    writeFileSync(addedTest, source(1));
+    const recovered = run(cwd, 'affected');
+    assert.equal(recovered.status, 0, recovered.stderr);
+    assert.match(recovered.stdout, /Selected 1\/2 test file\(s\)/);
+    assert.match(recovered.stdout, /▶ test\/added\.test\.mjs/);
+    assert.doesNotMatch(recovered.stdout, /▶ test\/value\.test\.mjs/);
+    assert.doesNotMatch(recovered.stdout, /Invalid graph cache/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('an untaken literal dynamic import selects only its owning test', () => {
   const cwd = makeRepository({ withOtherTest: true });
   try {

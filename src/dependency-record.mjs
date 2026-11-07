@@ -28,7 +28,7 @@ function isValidRecord(record) {
     record.environmentFiles.every((path) => typeof path === 'string') &&
     record.conventionDependencyFiles.every((path) => typeof path === 'string') &&
     Object.values(record.dependencyStates).every((state) => state && typeof state === 'object' && !Array.isArray(state)) &&
-    record.failedTests.every((test) => typeof test === 'string' && testSet.has(test)) &&
+    record.failedTests.every((test) => typeof test === 'string') &&
     record.unresolvedStaticTests.every((test) => typeof test === 'string' && testSet.has(test)) &&
     record.tests.every((test) => typeof test === 'string' &&
       Array.isArray(record.graph[test]) && record.graph[test].every((edge) =>
@@ -99,8 +99,10 @@ export function loadDependencyRecord(path, expected) {
     return { reason: 'Invalid graph cache; running full suite.' };
   }
   if (!isValidRecord(record)) return { reason: 'Invalid graph cache; running full suite.' };
-  if (record.version !== recordVersion || record.node !== expected.node ||
-      JSON.stringify(record.tests) !== JSON.stringify(expected.tests)) {
+  const expectedTests = new Set(expected.tests);
+  const recordedTestWasRemoved = [...record.tests, ...record.failedTests]
+    .some((test) => !expectedTests.has(test));
+  if (record.version !== recordVersion || record.node !== expected.node || recordedTestWasRemoved) {
     return { reason: 'Test files or runtime changed; running full suite.' };
   }
   if (record.config !== expected.config) {

@@ -70,6 +70,9 @@ export function selectTestsForFiles({ config, files, record, tests }) {
   }
 
   const selected = new Set(record.failedTests);
+  for (const test of tests) {
+    if (!Object.hasOwn(record.dependencyStates, test)) selected.add(test);
+  }
   const known = new Set(tests);
   for (const test of tests) {
     for (const [parent, child] of record.graph[test] ?? []) {
