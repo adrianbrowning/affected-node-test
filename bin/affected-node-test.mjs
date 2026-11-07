@@ -91,14 +91,19 @@ try {
   fail(error.message);
 }
 if (projectConfig.projects.length) {
+  const workspaceController = command === 'watch' ? new AbortController() : undefined;
+  if (workspaceController) stopWatching = (signal) => workspaceController.abort(signal);
   try {
-    process.exit(runWorkspace({
+    const status = await runWorkspace({
       root,
       projects: projectConfig.projects,
       command,
       args,
       cliPath: fileURLToPath(import.meta.url),
-    }));
+      signal: workspaceController?.signal,
+    });
+    stopWatching = undefined;
+    process.exit(status);
   } catch (error) {
     fail(error.message);
   }

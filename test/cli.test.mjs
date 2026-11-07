@@ -411,6 +411,43 @@ test('workspace affected routes Git changes only to their owning project', () =>
   }
 });
 
+test('workspace watch coordinates project reruns and shutdown', { timeout: 60_000 }, async () => {
+  const cwd = makeWorkspace();
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const child = spawn(process.execPath, [cli, 'watch', '--concurrency', '1'], {
+    cwd,
+    encoding: 'utf8',
+    env,
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  const closed = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
+  try {
+    await waitForProcessOutput(child, () => stdout + stderr,
+      (output) => output.includes('Watching in 2 projects.'), 30_000);
+    const rerunStart = stdout.length;
+    writeFileSync(join(cwd, 'packages', 'a', 'src', 'value.mjs'), 'export const value = 1; // watched\n');
+
+    await waitForProcessOutput(child, () => stdout + stderr,
+      (output) => output.slice(rerunStart).includes('[packages/a] ▶ test/value.test.mjs'), 20_000);
+    const rerunOutput = stdout.slice(rerunStart);
+    assert.doesNotMatch(rerunOutput, /\[packages\/b\] ▶ test\/value\.test\.mjs/);
+
+    child.kill('SIGTERM');
+    const result = await closed;
+    assert.equal(result.code, 143, stderr);
+  } finally {
+    if (child.exitCode === null) child.kill('SIGKILL');
+    await closed;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('a structurally invalid cache falls back to the full suite', () => {
   const cwd = makeRepository();
   try {

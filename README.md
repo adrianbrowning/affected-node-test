@@ -103,7 +103,7 @@ A workspace root can delegate to isolated project roots instead of defining sing
 }
 ```
 
-Project roots are validated, deduplicated, rejected when overlapping, and run in lexical order. Each project owns its discovery, configuration, dependency graph, and cache. Workspace `baseline`, `affected`, `since-last-run`, `related`, and `clear-cache` are supported. Git and explicit related paths are routed project-relative to their owning runners; workspace-level changes conservatively run every project baseline. Unchanged projects still check since-last-run records so sticky failures are not lost. Coordinated watch mode remains on the production roadmap. The workspace `projects` option cannot be mixed with single-project options in the same configuration file.
+Project roots are validated, deduplicated, rejected when overlapping, and run in lexical order. Each project owns its discovery, configuration, dependency graph, and cache. Workspace `baseline`, `affected`, `since-last-run`, `related`, `watch`, and `clear-cache` are supported. Git and explicit related paths are routed project-relative to their owning runners; workspace-level changes conservatively run every project baseline. Unchanged projects still check since-last-run records so sticky failures are not lost. Workspace watch runs project watchers concurrently, prefixes their output with project paths, and coordinates readiness and signal-driven shutdown. The workspace `projects` option cannot be mixed with single-project options in the same configuration file.
 
 ## Deliberate prototype limitations
 

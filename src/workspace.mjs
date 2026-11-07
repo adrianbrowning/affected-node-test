@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { loadProjectConfig } from './project-config.mjs';
@@ -30,8 +30,81 @@ function isProjectCachePath(project, projectPath) {
     projectPath.startsWith(`${project.cacheDirectoryPath}/`);
 }
 
-export function runWorkspace({ root, projects, command, args, cliPath }) {
-  const supportedCommands = new Set(['baseline', 'since-last-run', 'clear-cache', 'related', 'affected']);
+function prefixLines(stream, destination, projectPath, onLine = () => {}) {
+  let buffer = '';
+  stream.setEncoding('utf8');
+  stream.on('data', (chunk) => {
+    buffer += chunk;
+    let newline;
+    while ((newline = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      destination.write(`[${projectPath}] ${line}\n`);
+      onLine(line);
+    }
+  });
+  return () => {
+    if (!buffer) return;
+    destination.write(`[${projectPath}] ${buffer}\n`);
+    onLine(buffer);
+    buffer = '';
+  };
+}
+
+function runWorkspaceWatch({ projects, args, cliPath, signal }) {
+  return new Promise((resolveResult) => {
+    const children = [];
+    const readyProjects = new Set();
+    let closedChildren = 0;
+    let exitCode = 0;
+    let stopping = false;
+
+    const stop = (code, childSignal = 'SIGTERM') => {
+      if (stopping) return;
+      stopping = true;
+      exitCode = code;
+      for (const child of children) {
+        if (child.exitCode === null) child.kill(childSignal);
+      }
+    };
+
+    for (const project of projects) {
+      const child = spawn(process.execPath, [cliPath, 'watch', ...args], {
+        cwd: project.root,
+        env: process.env,
+        stdio: ['inherit', 'pipe', 'pipe'],
+      });
+      children.push(child);
+      const flushStdout = prefixLines(child.stdout, process.stdout, project.path, (line) => {
+        if (line !== 'Watching for changes.' || readyProjects.has(project.path)) return;
+        readyProjects.add(project.path);
+        if (readyProjects.size === projects.length) console.log(`Watching in ${projects.length} projects.`);
+      });
+      const flushStderr = prefixLines(child.stderr, process.stderr, project.path);
+      child.on('error', (error) => {
+        console.error(`[${project.path}] ${error.stack ?? error}`);
+        stop(1);
+      });
+      child.on('close', (code) => {
+        flushStdout();
+        flushStderr();
+        closedChildren += 1;
+        if (!stopping) stop(code ?? 1);
+        if (closedChildren === children.length) resolveResult(exitCode);
+      });
+    }
+
+    const abort = () => {
+      const childSignal = typeof signal?.reason === 'string' ? signal.reason : 'SIGTERM';
+      stop(childSignal === 'SIGINT' ? 130 : 143, childSignal);
+    };
+    if (signal?.aborted) abort();
+    else signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
+export async function runWorkspace({ root, projects, command, args, cliPath, signal }) {
+  const supportedCommands = new Set(['baseline', 'since-last-run', 'clear-cache', 'related', 'affected', 'watch']);
   if (!supportedCommands.has(command)) {
     throw new Error(`Workspace command is not implemented yet: ${command}`);
   }
@@ -66,6 +139,12 @@ export function runWorkspace({ root, projects, command, args, cliPath }) {
     const nested = resolvedProjects.find((candidate, candidateIndex) =>
       candidateIndex !== index && candidate.path.startsWith(`${project.path}/`));
     if (nested) throw new Error(`Workspace project roots cannot overlap: ${project.path} and ${nested.path}`);
+  }
+
+  if (command === 'watch') {
+    const { forwardedOptions, positionals } = splitConcurrencyArgs(args);
+    if (positionals.length) throw new Error(`Unexpected argument: ${positionals[0]}`);
+    return runWorkspaceWatch({ projects: resolvedProjects, args: forwardedOptions, cliPath, signal });
   }
 
   let projectRuns = resolvedProjects.map((project) => ({ project, command, args }));

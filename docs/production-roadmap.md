@@ -43,12 +43,12 @@ This roadmap targets parity with Vitest's affected-test selection subsystem, not
   - [x] Add `clear-cache`
   - [x] Add configurable cache location
 - [x] Add persistent watch mode
-- [ ] Add multiple project/package roots with isolated caches and triggers
+- [x] Add multiple project/package roots with isolated caches and triggers
   - [x] Validate workspace project roots and run deterministic baselines
   - [x] Isolate project discovery, configuration, caches, and cache clearing
   - [x] Route explicit related-file selection to owning projects
   - [x] Route Git affected selection to owning projects
-  - [ ] Coordinate persistent watch mode across projects
+  - [x] Coordinate persistent watch mode across projects
 - [ ] Support configurable discovery and decide the TypeScript/JSX loader contract
 
 ## P2: efficiency and ergonomics
@@ -56,6 +56,7 @@ This roadmap targets parity with Vitest's affected-test selection subsystem, not
 - [ ] Run only new or unrecorded tests when inventory grows
 - [ ] Store durations and schedule historically slow tests first
 - [ ] Consider percentage concurrency and `last-failed`
+- [ ] Consider optional workspace project filtering
 - [ ] Spill large buffered child output to temporary files
 
 ## Release readiness
