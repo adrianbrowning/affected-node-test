@@ -83,15 +83,16 @@ These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior 
 
 - [x] Run only new or unrecorded tests when inventory grows
 - [x] Store durations and schedule historically slow tests first
-- [ ] Consider percentage concurrency and `last-failed`
-- [ ] Consider optional workspace project filtering
-- [ ] Spill large buffered child output to temporary files
+- [ ] Add [`last-failed`](https://github.com/adrianbrowning/affected-node-test/issues/11)
+- [ ] Add [percentage concurrency](https://github.com/adrianbrowning/affected-node-test/issues/13)
+- [ ] Add optional [workspace project filtering](https://github.com/adrianbrowning/affected-node-test/issues/14)
+- [ ] [Spill large buffered child output to temporary files](https://github.com/adrianbrowning/affected-node-test/issues/17)
 - [ ] Work through the sliced [developer experience roadmap](developer-experience-roadmap.md)
 
 ## Release readiness
 
-- [ ] Initialize the final package directory as the repository root
+- [x] Initialize the final package directory as the repository root
 - [x] Add CI for Node 22.15, current LTS, and latest
-- [ ] Test supported POSIX and Windows signal/process behavior
-- [ ] Finalize package metadata, license, changelog, and publishing policy
-- [ ] Run security, performance, and documentation reviews
+- [ ] [Test supported POSIX and Windows signal/process behavior](https://github.com/adrianbrowning/affected-node-test/issues/15)
+- [ ] [Finalize package metadata, license, changelog, and publishing policy](https://github.com/adrianbrowning/affected-node-test/issues/18)
+- [ ] [Run security, performance, and documentation reviews](https://github.com/adrianbrowning/affected-node-test/issues/16)

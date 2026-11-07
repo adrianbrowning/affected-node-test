@@ -73,6 +73,8 @@ Acceptance criteria:
 
 ## DX-5: stable automation output
 
+Status: in progress ([preview JSON #7](https://github.com/adrianbrowning/affected-node-test/issues/7), [finite-run JSON #8](https://github.com/adrianbrowning/affected-node-test/issues/8), [workspace JSON #9](https://github.com/adrianbrowning/affected-node-test/issues/9)).
+
 User story: an editor, hook, or CI job can consume results without parsing prose.
 
 - Add versioned `--output=json` output for previews and finite runs.
@@ -86,6 +88,8 @@ Acceptance criteria:
 - Human output remains the default.
 
 ## DX-6: familiar workflow shortcuts
+
+Status: planned ([last-failed #11](https://github.com/adrianbrowning/affected-node-test/issues/11), [percentage concurrency #13](https://github.com/adrianbrowning/affected-node-test/issues/13), [project filtering #14](https://github.com/adrianbrowning/affected-node-test/issues/14)).
 
 User stories: a user can immediately rerun failures, allocate a percentage of CPUs, and focus on one workspace project.
 
@@ -101,6 +105,8 @@ Acceptance criteria:
 
 ## DX-7: optional onboarding automation
 
+Status: planned ([#12](https://github.com/adrianbrowning/affected-node-test/issues/12)).
+
 User story: a user can scaffold safe defaults after understanding the tool.
 
 - Add `init` only after package identity and the configuration schema stabilize.
@@ -113,6 +119,22 @@ Acceptance criteria:
 - Repeated initialization is idempotent.
 - Conflicting existing configuration is never overwritten silently.
 
+## DX-8: native TypeScript development
+
+Status: planned ([#10](https://github.com/adrianbrowning/affected-node-test/issues/10)).
+
+User story: a contributor gets strict type safety while running source and tests directly on Node 26 without a runtime loader.
+
+- Convert development sources and tests to erasable TypeScript syntax.
+- Run `tsc --noEmit` as part of the full quality gate because native stripping does not type-check.
+- Keep the published package executable as JavaScript because Node does not strip TypeScript below `node_modules`.
+
+Acceptance criteria:
+
+- Development and tests execute directly from TypeScript on Node 26.
+- Strict type-checking passes in CI and locally.
+- The packed npm artifact installs and runs as JavaScript.
+
 ## Recommended order
 
-Implement DX-1 through DX-7 in order. DX-1 and DX-2 are the immediate adoption wins. DX-4 is the strongest product-level improvement because the selector already makes safety decisions but does not yet retain enough provenance to explain them.
+Complete DX-5 before the independent DX-6 through DX-8 slices. DX-6 improves everyday workflows, DX-7 remains deliberately optional, and DX-8 can proceed incrementally while retaining a JavaScript publishing path.
