@@ -10,6 +10,7 @@ node bin/affected-node-test.mjs affected --concurrency 4
 node bin/affected-node-test.mjs affected origin/main --concurrency 4
 node bin/affected-node-test.mjs related src/math.mjs --concurrency 4
 node bin/affected-node-test.mjs since-last-run --concurrency 4
+node bin/affected-node-test.mjs watch --concurrency 4
 node bin/affected-node-test.mjs clear-cache
 ```
 
@@ -17,6 +18,7 @@ node bin/affected-node-test.mjs clear-cache
 - `affected` selects staged, unstaged, and untracked changes. `affected REF` also includes committed changes since the merge base of `REF` and `HEAD`. Both run tests whose captured dependency trees contain changed files.
 - `related FILE...` requires no Git repository and runs tests related to explicit repository-relative or absolute paths. It shares the same conservative triggers and mappings as `affected`.
 - `since-last-run` requires no Git repository. It compares each test's recorded dependency metadata with the filesystem, reruns changed, unrecorded, and previously failing tests, and updates successful records incrementally.
+- `watch` performs an initial full run, then persistently watches the project and serially reruns only tests selected by the same dependency graph, conservative triggers, and non-module mappings.
 - `clear-cache` removes the saved dependency graph and is safe to run when no cache exists.
 - The graph cache is tied to the exact Node version, `NODE_OPTIONS`, package manifests, lockfiles, npm configuration, Node version files, and TypeScript configuration files.
 - Per-test dependency state records include modification time and size. Missing or changed dependencies select that test; project-wide fingerprints remain the conservative outer safety layer.
@@ -24,6 +26,7 @@ node bin/affected-node-test.mjs clear-cache
 - A failed run preserves the previous dependency graph, records the failing test files, and keeps selecting them until they pass.
 - Test files run in a bounded worker pool. `--concurrency N` sets its size; the default is the smaller of four and the runtime's available parallelism.
 - `SIGINT` and `SIGTERM` stop active test processes, clean temporary edge logs, preserve the previous cache, and use conventional exit codes.
+- Watch events are debounced, cache/build/dependency directories are ignored, and changes arriving during a run are queued for the next serialized rerun.
 
 ## Demo
 

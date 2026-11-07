@@ -25,6 +25,15 @@ function git(cwd, ...args) {
   return result.stdout;
 }
 
+async function waitForProcessOutput(child, output, predicate, timeout = 8_000) {
+  const deadline = Date.now() + timeout;
+  while (!predicate(output())) {
+    if (child.exitCode !== null) throw new Error(`Process exited with ${child.exitCode}:\n${output()}`);
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for process output:\n${output()}`);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 function makeRepository({ withOtherTest = false } = {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-repo-'));
   mkdirSync(join(cwd, 'src'));
@@ -589,6 +598,45 @@ test('--concurrency bounds parallel execution and preserves output order', () =>
     const c = baseline.stdout.indexOf('▶ test/c.test.mjs');
     assert.ok(a !== -1 && a < b && b < c, baseline.stdout);
   } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('watch reruns only tests related to a changed dependency', { timeout: 45_000 }, async () => {
+  const cwd = makeRepository({ withOtherTest: true });
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const child = spawn(process.execPath, [cli, 'watch', '--concurrency', '1'], {
+    cwd,
+    encoding: 'utf8',
+    env,
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  const closed = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
+  try {
+    await waitForProcessOutput(child, () => stdout + stderr,
+      (output) => output.includes('Watching for changes.'), 20_000);
+    const rerunStart = stdout.length;
+    writeFileSync(join(cwd, 'src', 'value.mjs'), 'export const value = 1; // watched\n');
+
+    await waitForProcessOutput(child, () => stdout + stderr, (output) =>
+      output.includes('Watch changes: src/value.mjs') &&
+      output.slice(rerunStart).includes('▶ test/value.test.mjs'), 20_000);
+    const rerunOutput = stdout.slice(rerunStart);
+    assert.match(rerunOutput, /Selected 1\/2 test file\(s\)/);
+    assert.doesNotMatch(rerunOutput, /▶ test\/other\.test\.mjs/);
+
+    child.kill('SIGTERM');
+    const result = await closed;
+    assert.equal(result.code, 143, stderr);
+  } finally {
+    if (child.exitCode === null) child.kill('SIGKILL');
+    await closed;
     rmSync(cwd, { recursive: true, force: true });
   }
 });

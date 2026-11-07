@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, watch as watchFiles } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { resolve, relative, join, sep, isAbsolute } from 'node:path';
 import { availableParallelism, tmpdir } from 'node:os';
@@ -19,7 +19,7 @@ import {
 const root = process.cwd();
 const hook = fileURLToPath(new URL('../src/hook.mjs', import.meta.url));
 const [command = 'help', ...args] = process.argv.slice(2);
-const usage = 'Usage:\n  affected-node-test baseline [--concurrency N]\n  affected-node-test affected [git-ref] [--concurrency N]\n  affected-node-test related <file...> [--concurrency N]\n  affected-node-test since-last-run [--concurrency N]\n  affected-node-test clear-cache';
+const usage = 'Usage:\n  affected-node-test baseline [--concurrency N]\n  affected-node-test affected [git-ref] [--concurrency N]\n  affected-node-test related <file...> [--concurrency N]\n  affected-node-test since-last-run [--concurrency N]\n  affected-node-test watch [--concurrency N]\n  affected-node-test clear-cache';
 const fail = (message) => { console.error(message); process.exit(1); };
 if (command === 'help' || command === '--help' || command === '-h') {
   console.log(usage);
@@ -48,6 +48,7 @@ const options = parseArguments(args);
 const activeChildren = new Set();
 const signalExitCodes = { SIGINT: 130, SIGTERM: 143 };
 let interruptedSignal;
+let stopWatching;
 function killChildTree(child, signal) {
   if (!child.pid) return;
   try {
@@ -68,6 +69,7 @@ function interrupt(signal) {
     for (const child of activeChildren) killChildTree(child, 'SIGKILL');
   }, 2_000);
   forceKill.unref();
+  stopWatching?.(signal);
 }
 process.once('SIGINT', () => interrupt('SIGINT'));
 process.once('SIGTERM', () => interrupt('SIGTERM'));
@@ -597,6 +599,84 @@ async function affected(ref) {
   console.log(`Selected ${selectedTests.length}/${tests.length} test file(s)`);
   finishRun(tests, await runTests(selectedTests, saved.graph), saved);
 }
+async function watchMode() {
+  await baseline();
+  if (interruptedSignal) return;
+
+  const ignoredDirectories = new Set(['.git', 'node_modules', 'coverage', 'dist', 'build']);
+  const pending = new Set();
+  let debounce;
+  let running = false;
+  let stopped = false;
+
+  const shouldIgnore = (path) => isCacheRepositoryPath(path) ||
+    ignoredDirectories.has(path.split('/')[0]);
+
+  const runChanges = async () => {
+    if (running || stopped || !pending.size) return;
+    running = true;
+    const files = [...pending].sort();
+    pending.clear();
+    try {
+      const tests = discover();
+      const saved = loadUsableCache(tests);
+      console.log(`Watch changes: ${files.join(', ')}`);
+      if (!saved) {
+        await baseline();
+      } else {
+        const selection = selectForFiles(tests, saved, files);
+        if (selection.fullRunMessage) {
+          console.log(selection.fullRunMessage);
+          await baseline();
+        } else {
+          for (const message of selection.messages) console.log(message);
+          if (!selection.selected.size) {
+            console.log('No related tests found.');
+          } else {
+            const selectedTests = [...selection.selected].sort();
+            console.log(`Selected ${selectedTests.length}/${tests.length} test file(s)`);
+            finishRun(tests, await runTests(selectedTests, saved.graph), saved);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Watch rerun failed: ${error.stack ?? error}`);
+      process.exitCode = 1;
+    } finally {
+      running = false;
+      if (pending.size && !stopped) {
+        clearTimeout(debounce);
+        debounce = setTimeout(() => void runChanges(), 100);
+      }
+    }
+  };
+
+  const watcher = watchFiles(root, { recursive: true }, (_event, filename) => {
+    if (!filename || stopped) return;
+    const path = normal(String(filename));
+    if (shouldIgnore(path)) return;
+    pending.add(path);
+    clearTimeout(debounce);
+    debounce = setTimeout(() => void runChanges(), 100);
+  });
+  watcher.on('error', (error) => {
+    console.error(`File watcher failed: ${error.stack ?? error}`);
+    process.exitCode = 1;
+    stopWatching?.();
+  });
+  console.log('Watching for changes.');
+  await new Promise((resolveStop) => {
+    stopWatching = (signal) => {
+      if (stopped) return;
+      stopped = true;
+      clearTimeout(debounce);
+      watcher.close();
+      if (signal) process.exitCode = signalExitCodes[signal];
+      resolveStop();
+    };
+  });
+  stopWatching = undefined;
+}
 if (command === 'baseline') {
   if (options.positionals.length) fail(`Unexpected argument: ${options.positionals[0]}`);
   await baseline();
@@ -608,6 +688,9 @@ if (command === 'baseline') {
 } else if (command === 'since-last-run') {
   if (options.positionals.length) fail(`Unexpected argument: ${options.positionals[0]}`);
   await sinceLastRun();
+} else if (command === 'watch') {
+  if (options.positionals.length) fail(`Unexpected argument: ${options.positionals[0]}`);
+  await watchMode();
 } else if (command === 'clear-cache') {
   if (options.positionals.length) fail(`Unexpected argument: ${options.positionals[0]}`);
   clearCache();

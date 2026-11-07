@@ -42,7 +42,7 @@ This roadmap targets parity with Vitest's affected-test selection subsystem, not
 - [x] Complete cache lifecycle controls
   - [x] Add `clear-cache`
   - [x] Add configurable cache location
-- [ ] Add persistent watch mode
+- [x] Add persistent watch mode
 - [ ] Add multiple project/package roots with isolated caches and triggers
 - [ ] Support configurable discovery and decide the TypeScript/JSX loader contract
 
