@@ -102,6 +102,6 @@ These tasks come from the 2026-11-07 architecture review. Preserve CLI behavior 
 
 - [x] Initialize the final package directory as the repository root
 - [x] Build and test the Node 26 TypeScript development sources
-- [ ] [Test supported POSIX and Windows signal/process behavior](https://github.com/adrianbrowning/affected-node-test/issues/15)
+- [x] [Test supported POSIX and Windows signal/process behavior](https://github.com/adrianbrowning/affected-node-test/issues/15)
 - [ ] [Finalize package metadata, license, changelog, and publishing policy](https://github.com/adrianbrowning/affected-node-test/issues/18)
 - [ ] [Run security, performance, and documentation reviews](https://github.com/adrianbrowning/affected-node-test/issues/16)

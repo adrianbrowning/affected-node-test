@@ -91,7 +91,7 @@ pnpm exec affected-node-test affected --project 'packages/api-*'
 - A failed run preserves the previous dependency graph, records the failing test files, and keeps selecting them until they pass.
 - Test files run in a bounded worker pool. `--concurrency N` sets an exact size; `--concurrency P%` uses `floor(P% × available parallelism)` with a minimum of one worker. Percentages must be greater than zero and at most 100%. The default is the smaller of four and the runtime's available parallelism. Successful durations are cached so historically slower tests start first, while buffered reporting remains deterministic.
 - Each worker stream stays in memory through 256 KiB, then spills to a mode-`0600` file inside its secure temporary directory. Spilled output is streamed back in deterministic test-file order and removed after success, failure, interruption, or worker startup failure.
-- `SIGINT` and `SIGTERM` stop active test processes, clean temporary edge logs, preserve the previous cache, and use conventional exit codes.
+- On POSIX, `SIGINT` and `SIGTERM` stop active process groups, clean temporary edge logs, preserve the previous cache, and use conventional exit codes. Windows uses forced process-tree termination because programmatic POSIX signals are not reliable there. See [process and signal behavior](docs/process-behavior.md).
 - Watch events are debounced, cache/build/dependency directories are ignored, and changes arriving during a run are queued for the next serialized rerun.
 
 ### JSON output

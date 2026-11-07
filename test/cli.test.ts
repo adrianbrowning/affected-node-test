@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { terminateProcessTree } from '../src/process-control.ts';
 
 const cli = fileURLToPath(new URL('../bin/affected-node-test.ts', import.meta.url));
 
@@ -38,6 +39,18 @@ async function waitForProcessOutput(
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for process output:\n${output()}`);
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
+}
+
+async function stopWatchProcess(
+  child: ChildProcess,
+  closed: Promise<{ code: number | null; signal: NodeJS.Signals | null }>,
+  stderr: string,
+) {
+  if (process.platform === 'win32') terminateProcessTree(child, 'SIGKILL');
+  else child.kill('SIGTERM');
+  const result = await closed;
+  if (process.platform !== 'win32') assert.equal(result.code, 143, stderr);
+  return result;
 }
 
 function makeRepository({ withOtherTest = false } = {}) {
@@ -920,6 +933,7 @@ test('workspace project filters scope finite and watch commands', { timeout: 60_
     delete env.NODE_TEST_CONTEXT;
     const child = spawn(process.execPath, [cli, 'watch', '--project', 'packages/a', '--concurrency', '1'], {
       cwd,
+      detached: process.platform !== 'win32',
       env,
     });
     let stdout = '';
@@ -928,15 +942,15 @@ test('workspace project filters scope finite and watch commands', { timeout: 60_
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
-    const closed = new Promise((resolve) => child.once('close', (code) => resolve(code)));
+    const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+      child.once('close', (code, signal) => resolve({ code, signal })));
     try {
       await waitForProcessOutput(child, () => stdout + stderr,
         (output) => output.includes('Watching in 1 projects.'), 30_000);
       assert.doesNotMatch(stdout, /\[packages\/b\]/);
-      child.kill('SIGTERM');
-      assert.equal(await closed, 143, stderr);
+      await stopWatchProcess(child, closed, stderr);
     } finally {
-      if (child.exitCode === null) child.kill('SIGKILL');
+      if (child.exitCode === null) terminateProcessTree(child, 'SIGKILL');
       await closed;
     }
   } finally {
@@ -1119,6 +1133,7 @@ test('watch emits structured readiness over IPC', { timeout: 30_000 }, async () 
   delete env.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [cli, 'watch', '--concurrency', '1'], {
     cwd,
+    detached: process.platform !== 'win32',
     env,
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
@@ -1140,11 +1155,9 @@ test('watch emits structured readiness over IPC', { timeout: 30_000 }, async () 
         'type' in message && message.type === 'affected-node-test:watch-ready')), 15_000);
     assert.match(stdout, /Watching for changes\./);
 
-    child.kill('SIGTERM');
-    const result = await closed;
-    assert.equal(result.code, 143, stderr);
+    await stopWatchProcess(child, closed, stderr);
   } finally {
-    if (child.exitCode === null) child.kill('SIGKILL');
+    if (child.exitCode === null) terminateProcessTree(child, 'SIGKILL');
     await closed;
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -1156,6 +1169,7 @@ test('workspace watch coordinates project reruns and shutdown', { timeout: 60_00
   delete env.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [cli, 'watch', '--concurrency', '1'], {
     cwd,
+    detached: process.platform !== 'win32',
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -1178,11 +1192,9 @@ test('workspace watch coordinates project reruns and shutdown', { timeout: 60_00
     const rerunOutput = stdout.slice(rerunStart);
     assert.doesNotMatch(rerunOutput, /\[packages\/b\] ▶ test\/value\.test\.mjs/);
 
-    child.kill('SIGTERM');
-    const result = await closed;
-    assert.equal(result.code, 143, stderr);
+    await stopWatchProcess(child, closed, stderr);
   } finally {
-    if (child.exitCode === null) child.kill('SIGKILL');
+    if (child.exitCode === null) terminateProcessTree(child, 'SIGKILL');
     await closed;
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -1197,6 +1209,7 @@ test('workspace watch stops sibling watchers when one project fails to start', {
   delete env.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [cli, 'watch', '--concurrency', '1'], {
     cwd,
+    detached: process.platform !== 'win32',
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -1213,7 +1226,7 @@ test('workspace watch stops sibling watchers when one project fails to start', {
     assert.equal(result.code, 1, `${stdout}\n${stderr}`);
     assert.match(stderr, /packages\/b.*setupFiles pattern matched no files/s);
   } finally {
-    if (child.exitCode === null) child.kill('SIGKILL');
+    if (child.exitCode === null) terminateProcessTree(child, 'SIGKILL');
     await closed;
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -1564,6 +1577,7 @@ test('watch reruns only tests related to a changed dependency', { timeout: 45_00
   delete env.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [cli, 'watch', '--concurrency', '1'], {
     cwd,
+    detached: process.platform !== 'win32',
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -1588,32 +1602,35 @@ test('watch reruns only tests related to a changed dependency', { timeout: 45_00
     assert.match(rerunOutput, /Selected 1\/2 test file\(s\)/);
     assert.doesNotMatch(rerunOutput, /▶ test\/other\.test\.mjs/);
 
-    child.kill('SIGTERM');
-    const result = await closed;
-    assert.equal(result.code, 143, stderr);
+    await stopWatchProcess(child, closed, stderr);
   } finally {
-    if (child.exitCode === null) child.kill('SIGKILL');
+    if (child.exitCode === null) terminateProcessTree(child, 'SIGKILL');
     await closed;
     rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test('SIGTERM stops active test processes and preserves the cache', { timeout: 15_000 }, async () => {
+for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+test(`${signal} stops active test processes and preserves the cache`, {
+  skip: process.platform === 'win32' ? 'Windows does not expose graceful POSIX signal delivery.' : false,
+  timeout: 15_000,
+}, async () => {
   const cwd = makeInterruptRepository();
   const tracker = join(cwd, 'interrupt.log');
   let cliProcess: ChildProcess | undefined;
   let testPid: number | undefined;
+  const previousTemporaryDirectories = edgeTemporaryDirectories();
   try {
     assert.equal(run(cwd, 'baseline').status, 0);
     const cachePath = join(cwd, '.affected-tests', 'graph.json');
     const previousCache = readFileSync(cachePath, 'utf8');
-    const previousTemporaryDirectories = edgeTemporaryDirectories();
     writeFileSync(join(cwd, 'src', 'value.mjs'), 'export const value = 1; // changed\n');
 
     const env: NodeJS.ProcessEnv = { ...process.env, INTERRUPT_TRACKER: tracker };
     delete env.NODE_TEST_CONTEXT;
     cliProcess = spawn(process.execPath, [cli, 'affected', 'HEAD', '--concurrency', '1'], {
       cwd,
+      detached: process.platform !== 'win32',
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -1628,17 +1645,64 @@ test('SIGTERM stops active test processes and preserves the cache', { timeout: 1
 
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit) =>
       cliProcess?.once('exit', (code, signal) => resolveExit({ code, signal })));
-    cliProcess.kill('SIGTERM');
+    cliProcess.kill(signal);
     const result = await exited;
 
     await waitFor(() => testPid !== undefined && !isProcessRunning(testPid));
     await waitFor(() => JSON.stringify(edgeTemporaryDirectories()) === JSON.stringify(previousTemporaryDirectories));
-    assert.deepEqual(result, { code: 143, signal: null });
-    assert.match(stderr, /Test run interrupted by SIGTERM; previous graph was left unchanged\./);
+    assert.deepEqual(result, { code: exitCode, signal: null });
+    assert.match(stderr, new RegExp(`Test run interrupted by ${signal}; previous graph was left unchanged\\.`));
     assert.equal(readFileSync(cachePath, 'utf8'), previousCache);
   } finally {
-    if (cliProcess && cliProcess.exitCode === null && cliProcess.signalCode === null) cliProcess.kill('SIGKILL');
+    if (cliProcess && cliProcess.exitCode === null && cliProcess.signalCode === null) {
+      terminateProcessTree(cliProcess, 'SIGKILL');
+    }
     if (testPid !== undefined && Number.isSafeInteger(testPid) && testPid > 1 && isProcessRunning(testPid)) process.kill(testPid, 'SIGKILL');
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+}
+
+test('forced process-tree termination preserves the previous cache', { timeout: 15_000 }, async () => {
+  const cwd = makeInterruptRepository();
+  const tracker = join(cwd, 'interrupt.log');
+  let cliProcess: ChildProcess | undefined;
+  let testPid: number | undefined;
+  const previousTemporaryDirectories = edgeTemporaryDirectories();
+  try {
+    assert.equal(run(cwd, 'baseline').status, 0);
+    const cachePath = join(cwd, '.affected-tests', 'graph.json');
+    const previousCache = readFileSync(cachePath, 'utf8');
+    writeFileSync(join(cwd, 'src', 'value.mjs'), 'export const value = 1; // changed\n');
+
+    const env: NodeJS.ProcessEnv = { ...process.env, INTERRUPT_TRACKER: tracker };
+    delete env.NODE_TEST_CONTEXT;
+    cliProcess = spawn(process.execPath, [cli, 'affected', 'HEAD', '--concurrency', '1'], {
+      cwd,
+      detached: process.platform !== 'win32',
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    await waitFor(() => existsSync(tracker));
+    testPid = Number(readFileSync(tracker, 'utf8').match(/start:(\d+)/)?.[1]);
+    assert.ok(Number.isSafeInteger(testPid) && testPid > 1);
+
+    const closed = new Promise<void>((resolve) => cliProcess?.once('close', () => resolve()));
+    terminateProcessTree(cliProcess, 'SIGKILL');
+    await closed;
+
+    await waitFor(() => testPid !== undefined && !isProcessRunning(testPid));
+    assert.equal(readFileSync(cachePath, 'utf8'), previousCache);
+  } finally {
+    if (cliProcess && cliProcess.exitCode === null) terminateProcessTree(cliProcess, 'SIGKILL');
+    if (testPid !== undefined && Number.isSafeInteger(testPid) && testPid > 1 && isProcessRunning(testPid)) {
+      process.kill(testPid, 'SIGKILL');
+    }
+    for (const directory of edgeTemporaryDirectories()) {
+      if (!previousTemporaryDirectories.includes(directory)) {
+        rmSync(join(tmpdir(), directory), { recursive: true, force: true });
+      }
+    }
     rmSync(cwd, { recursive: true, force: true });
   }
 });

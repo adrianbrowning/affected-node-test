@@ -16,11 +16,14 @@ concurrency:
 
 jobs:
   verify:
-    name: Node ${{ matrix.node-version }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / Node ${{ matrix.node-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
         node-version:
           - 26
     steps:
@@ -43,4 +46,4 @@ jobs:
       - name: Require the supported Node version to pass
         if: ${{ needs.verify.result != 'success' }}
         run: exit 1
-      - run: echo "Documentation, typechecking, the build, and the full suite passed on Node 26."
+      - run: echo "Documentation, typechecking, the build, and the full suite passed on Node 26 for POSIX and Windows."

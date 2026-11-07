@@ -9,6 +9,7 @@ import type { SelectionCommand } from './selection-document.ts';
 import { watchReadyMessageType } from './watch-protocol.ts';
 import type { CommandName } from './cli-help.ts';
 import { isNodeError } from './errors.ts';
+import { terminateProcessTree } from './process-control.ts';
 
 export type WorkspaceProject = {
   cacheDirectoryPath: string;
@@ -104,6 +105,7 @@ function runWorkspaceWatch({ projects, args, cliPath }: {
     const readyProjects = new Set<string>();
     let closedChildren = 0;
     let exitCode = 0;
+    let forceKill: NodeJS.Timeout | undefined;
     let stopping = false;
 
     const stop = (code: number, childSignal: NodeJS.Signals = 'SIGTERM') => {
@@ -111,8 +113,14 @@ function runWorkspaceWatch({ projects, args, cliPath }: {
       stopping = true;
       exitCode = code;
       for (const child of children) {
-        if (child.exitCode === null) child.kill(childSignal);
+        if (child.exitCode === null) terminateProcessTree(child, childSignal);
       }
+      forceKill = setTimeout(() => {
+        for (const child of children) {
+          if (child.exitCode === null) terminateProcessTree(child, 'SIGKILL');
+        }
+      }, 2_000);
+      forceKill.unref();
     };
     const onSigint = () => stop(130, 'SIGINT');
     const onSigterm = () => stop(143, 'SIGTERM');
@@ -124,6 +132,7 @@ function runWorkspaceWatch({ projects, args, cliPath }: {
     for (const project of projects) {
       const child = spawn(process.execPath, [cliPath, 'watch', ...args], {
         cwd: project.root,
+        detached: process.platform !== 'win32',
         env: process.env,
         stdio: ['inherit', 'pipe', 'pipe', 'ipc'],
       });
@@ -147,6 +156,7 @@ function runWorkspaceWatch({ projects, args, cliPath }: {
         closedChildren += 1;
         if (!stopping) stop(code ?? 1);
         if (closedChildren === children.length) {
+          clearTimeout(forceKill);
           cleanupSignals();
           resolveResult(exitCode);
         }

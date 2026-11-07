@@ -53,6 +53,7 @@ import {
 import type { ProjectConfig } from '../src/project-config.ts';
 import { errorMessage, isNodeError } from '../src/errors.ts';
 import { initializeProject } from '../src/init.ts';
+import { terminateProcessTree } from '../src/process-control.ts';
 
 const root = process.cwd();
 const sourceExtension = import.meta.url.endsWith('.ts') ? 'ts' : 'js';
@@ -161,24 +162,15 @@ const signalExitCodes = { SIGINT: 130, SIGTERM: 143 } as const;
 type InterruptSignal = keyof typeof signalExitCodes;
 let interruptedSignal: InterruptSignal | undefined;
 let stopWatching: ((signal?: InterruptSignal) => void) | undefined;
-function killChildTree(child: ChildProcess, signal: NodeJS.Signals) {
-  if (!child.pid) return;
-  try {
-    if (process.platform === 'win32') child.kill(signal);
-    else process.kill(-child.pid, signal);
-  } catch (error: unknown) {
-    if (!isNodeError(error) || error.code !== 'ESRCH') throw error;
-  }
-}
 function interrupt(signal: InterruptSignal) {
   if (interruptedSignal) {
-    for (const child of activeChildren) killChildTree(child, 'SIGKILL');
+    for (const child of activeChildren) terminateProcessTree(child, 'SIGKILL');
     return;
   }
   interruptedSignal = signal;
-  for (const child of activeChildren) killChildTree(child, signal);
+  for (const child of activeChildren) terminateProcessTree(child, signal);
   const forceKill = setTimeout(() => {
-    for (const child of activeChildren) killChildTree(child, 'SIGKILL');
+    for (const child of activeChildren) terminateProcessTree(child, 'SIGKILL');
   }, 2_000);
   forceKill.unref();
   stopWatching?.(signal);
