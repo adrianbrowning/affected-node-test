@@ -5,6 +5,7 @@
   "type": "module",
   "files": [
     "bin",
+    "schema",
     "src",
     "README.md"
   ],

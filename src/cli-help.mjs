@@ -57,6 +57,15 @@ Options:
 
 Example:
   affected-node-test clear-cache`,
+  doctor: `Validate configuration, test discovery, cache state, Git availability, and workspace projects without running tests.
+
+Usage: affected-node-test doctor
+
+Options:
+  -h, --help  Show this command's help.
+
+Example:
+  affected-node-test doctor`,
 };
 
 export const commandNames = Object.freeze(Object.keys(commandHelpText));
@@ -77,6 +86,7 @@ Commands:
   since-last-run        Run tests whose recorded dependencies changed on disk.
   watch                 Watch files and serially rerun selected tests.
   clear-cache           Remove the saved dependency graph.
+  doctor                Validate setup without running tests.
 
 Global options:
   -h, --help       Show this help or COMMAND help.
@@ -88,6 +98,7 @@ Examples:
   affected-node-test baseline
   affected-node-test affected origin/main
   affected-node-test related src/math.mjs
+  affected-node-test doctor
 
 Run affected-node-test help COMMAND for command-specific details.`;
 }

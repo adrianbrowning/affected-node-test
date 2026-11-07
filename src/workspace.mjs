@@ -108,12 +108,7 @@ function runWorkspaceWatch({ projects, args, cliPath }) {
   });
 }
 
-export async function runWorkspace({ root, projects, command, args, cliPath }) {
-  const supportedCommands = new Set(['baseline', 'since-last-run', 'clear-cache', 'related', 'affected', 'watch']);
-  if (!supportedCommands.has(command)) {
-    throw new Error(`Workspace command is not implemented yet: ${command}`);
-  }
-
+export function resolveWorkspaceProjects({ root, projects }) {
   const resolvedProjects = projects.map((configuredRoot) => {
     if (isAbsolute(configuredRoot)) {
       throw new Error(`Workspace project root must be project-relative: ${configuredRoot}`);
@@ -145,6 +140,16 @@ export async function runWorkspace({ root, projects, command, args, cliPath }) {
       candidateIndex !== index && candidate.path.startsWith(`${project.path}/`));
     if (nested) throw new Error(`Workspace project roots cannot overlap: ${project.path} and ${nested.path}`);
   }
+  return resolvedProjects;
+}
+
+export async function runWorkspace({ root, projects, command, args, cliPath }) {
+  const supportedCommands = new Set(['baseline', 'since-last-run', 'clear-cache', 'related', 'affected', 'watch']);
+  if (!supportedCommands.has(command)) {
+    throw new Error(`Workspace command is not implemented yet: ${command}`);
+  }
+
+  const resolvedProjects = resolveWorkspaceProjects({ root, projects });
 
   if (command === 'watch') {
     const { forwardedOptions, positionals } = splitConcurrencyArgs(args);

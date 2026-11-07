@@ -32,6 +32,7 @@ No configuration is needed for conventional `.test.js`, `.test.mjs`, `.test.cjs`
 
 ```json file=docs/examples/minimal-config.json
 {
+  "$schema": "./node_modules/affected-node-test/schema/affected-node-test.schema.json",
   "include": ["test/**/*.test.mjs"]
 }
 ```
@@ -47,6 +48,7 @@ No configuration is needed for conventional `.test.js`, `.test.mjs`, `.test.cjs`
 | Select dependencies changed on disk without Git | `pnpm exec affected-node-test since-last-run` |
 | Keep selecting tests as files change | `pnpm exec affected-node-test watch` |
 | Remove the saved graph | `pnpm exec affected-node-test clear-cache` |
+| Validate configuration and discovery without running tests | `pnpm exec affected-node-test doctor` |
 | Discover commands or command-specific options | `pnpm exec affected-node-test --help` or `pnpm exec affected-node-test affected --help` |
 | Show the installed version | `pnpm exec affected-node-test --version` |
 
@@ -60,6 +62,7 @@ pnpm exec affected-node-test related src/math.mjs --concurrency 4
 pnpm exec affected-node-test since-last-run --concurrency 4
 pnpm exec affected-node-test watch --concurrency 4
 pnpm exec affected-node-test clear-cache
+pnpm exec affected-node-test doctor
 ```
 
 - `baseline` runs all discovered test files, merges literal static-import edges with observed runtime module-resolution edges, and writes `.affected-tests/graph.json` after a passing suite.
@@ -100,6 +103,7 @@ An optional `affected-node-test.config.json` at the repository root controls cac
 
 ```json file=docs/examples/affected-node-test.config.json
 {
+  "$schema": "./node_modules/affected-node-test/schema/affected-node-test.schema.json",
   "cacheDir": ".cache/affected-node-test",
   "include": ["test/**/*.test.mjs"],
   "exclude": ["test/fixtures/**"],
@@ -117,6 +121,8 @@ An optional `affected-node-test.config.json` at the repository root controls cac
   ]
 }
 ```
+
+The packaged JSON Schema provides editor completion and validates the same keys accepted at runtime. `affected-node-test doctor` checks Node compatibility, discovery, cache state, Git availability, workspace roots, and configured file patterns without running tests or writing the cache.
 
 - A non-empty `include` replaces default `.test`/`.spec` JavaScript discovery.
 - `cacheDir` sets a project-relative cache directory; it defaults to `.affected-tests` and cannot escape the project root.
@@ -147,11 +153,12 @@ A workspace root can delegate to isolated project roots instead of defining sing
 
 ```json file=docs/examples/workspace-config.json
 {
+  "$schema": "./node_modules/affected-node-test/schema/affected-node-test.schema.json",
   "projects": ["packages/api", "packages/web"]
 }
 ```
 
-Project roots are validated, deduplicated, rejected when overlapping, and run in lexical order. Each project owns its discovery, configuration, dependency graph, and cache. Workspace `baseline`, `affected`, `since-last-run`, `related`, `watch`, and `clear-cache` are supported. Git and explicit related paths are routed project-relative to their owning runners; workspace-level changes conservatively run every project baseline. Unchanged projects still check since-last-run records so sticky failures are not lost. Workspace watch runs project watchers concurrently, prefixes their output with project paths, and coordinates readiness and signal-driven shutdown. The workspace `projects` option cannot be mixed with single-project options in the same configuration file.
+Project roots are validated, deduplicated, rejected when overlapping, and run in lexical order. Each project owns its discovery, configuration, dependency graph, and cache. Workspace `baseline`, `affected`, `since-last-run`, `related`, `watch`, `clear-cache`, and read-only `doctor` diagnostics are supported. Git and explicit related paths are routed project-relative to their owning runners; workspace-level changes conservatively run every project baseline. Unchanged projects still check since-last-run records so sticky failures are not lost. Workspace watch runs project watchers concurrently, prefixes their output with project paths, and coordinates readiness and signal-driven shutdown. The workspace `projects` option cannot be mixed with single-project options in the same configuration file.
 
 ## Known limitations
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, watch as watchFiles } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, watch as watchFiles } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { resolve, relative, join, sep, isAbsolute } from 'node:path';
 import { availableParallelism, tmpdir } from 'node:os';
@@ -10,6 +10,7 @@ import { commandHelp, commandNames, topLevelHelp } from '../src/cli-help.mjs';
 import { configurationFingerprint } from '../src/config.mjs';
 import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.mjs';
 import { dependenciesForTest } from '../src/dependency-graph.mjs';
+import { diagnose } from '../src/doctor.mjs';
 import { buildStaticGraph } from '../src/static-graph.mjs';
 import { getGitChanges } from '../src/git-changes.mjs';
 import {
@@ -19,10 +20,10 @@ import {
 } from '../src/selection-run.mjs';
 import { runWorkspace } from '../src/workspace.mjs';
 import { sendWatchReady } from '../src/watch-protocol.mjs';
+import { discoverTestFiles } from '../src/test-discovery.mjs';
 import {
   conventionDependencyPatterns,
   loadProjectConfig,
-  matchesPatterns,
   matchingRepositoryFiles,
   repositoryFilesFingerprint,
 } from '../src/project-config.mjs';
@@ -113,6 +114,16 @@ try {
 } catch (error) {
   fail(error.message);
 }
+if (command === 'doctor') {
+  try {
+    const report = diagnose(root, projectConfig);
+    console.log(report.lines.join('\n'));
+    for (const problem of report.problems) console.error(`Problem: ${problem}`);
+    process.exit(report.problems.length ? 1 : 0);
+  } catch (error) {
+    fail(error.message);
+  }
+}
 if (projectConfig.projects.length) {
   try {
     const status = await runWorkspace({
@@ -182,20 +193,8 @@ if (globalSetupFiles.size) {
   });
 }
 
-function discover(dir = root, output = []) {
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    if (['node_modules', '.git', '.affected-tests', 'coverage', 'dist', 'build'].includes(e.name)) continue;
-    const p = join(dir, e.name);
-    if (e.isDirectory()) discover(p, output);
-    else if (e.isFile()) {
-      const repositoryPath = normal(relative(root, p));
-      const included = projectConfig.include.length
-        ? matchesPatterns(repositoryPath, projectConfig.include)
-        : /(?:\.test|\.spec)\.[cm]?js$/.test(e.name);
-      if (included && !matchesPatterns(repositoryPath, projectConfig.exclude)) output.push(repositoryPath);
-    }
-  }
-  return output.sort();
+function discover() {
+  return discoverTestFiles(root, projectConfig);
 }
 function graphForTest(test) {
   const folder = mkdtempSync(join(tmpdir(), 'affected-test-'));

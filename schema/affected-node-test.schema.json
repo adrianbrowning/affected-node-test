@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/adrianbrowning/affected-node-test/main/schema/affected-node-test.schema.json",
+  "title": "affected-node-test configuration",
+  "description": "Configuration for affected-node-test single projects and workspaces.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "cacheDir": {
+      "type": "string",
+      "minLength": 1,
+      "default": ".affected-tests"
+    },
+    "include": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "exclude": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "envFiles": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "forceRerunTriggers": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "globalSetupFiles": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "nodeArgs": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "projectDependencies": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "projects": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "setupFiles": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "watchTriggerPatterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pattern", "tests"],
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tests": {
+            "$ref": "#/$defs/nonEmptyStringArray"
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["projects"],
+        "properties": {
+          "projects": {
+            "minItems": 1
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["cacheDir"] },
+            { "required": ["include"] },
+            { "required": ["exclude"] },
+            { "required": ["envFiles"] },
+            { "required": ["forceRerunTriggers"] },
+            { "required": ["globalSetupFiles"] },
+            { "required": ["nodeArgs"] },
+            { "required": ["projectDependencies"] },
+            { "required": ["setupFiles"] },
+            { "required": ["watchTriggerPatterns"] }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "nonEmptyStringArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

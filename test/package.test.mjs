@@ -12,7 +12,7 @@ test('the published package and checked quickstart use the affected-node-test id
   assert.equal(packageJson.name, 'affected-node-test');
   assert.equal(packageJson.private, undefined);
   assert.equal(packageJson.bin['affected-node-test'], './bin/affected-node-test.mjs');
-  assert.deepEqual(packageJson.files, ['bin', 'src', 'README.md']);
+  assert.deepEqual(packageJson.files, ['bin', 'schema', 'src', 'README.md']);
 
   const packed = spawnSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
     cwd: root,
@@ -24,6 +24,7 @@ test('the published package and checked quickstart use the affected-node-test id
   assert.ok(files.includes('bin/affected-node-test.mjs'));
   assert.ok(packedFiles.find((file) => file.path === 'bin/affected-node-test.mjs').mode & 0o111);
   assert.ok(files.includes('src/selection-run.mjs'));
+  assert.ok(files.includes('schema/affected-node-test.schema.json'));
   assert.ok(files.includes('README.md'));
   assert.ok(!files.some((file) => file.startsWith('test/')));
 
@@ -34,4 +35,11 @@ test('the published package and checked quickstart use the affected-node-test id
   assert.match(quickstart, /pnpm exec affected-node-test baseline/);
   assert.match(quickstart, /pnpm exec affected-node-test affected/);
   assert.match(quickstart, /node --test/);
+
+  const schema = JSON.parse(readFileSync(join(root, 'schema', 'affected-node-test.schema.json'), 'utf8'));
+  assert.equal(schema.type, 'object');
+  assert.equal(schema.additionalProperties, false);
+  assert.equal(schema.properties.$schema.type, 'string');
+  assert.ok(schema.properties.projects);
+  assert.ok(schema.properties.watchTriggerPatterns);
 });

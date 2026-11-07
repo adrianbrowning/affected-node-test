@@ -1,3 +1,4 @@
 {
+  "$schema": "./node_modules/affected-node-test/schema/affected-node-test.schema.json",
   "projects": ["packages/api", "packages/web"]
 }

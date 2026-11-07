@@ -91,6 +91,7 @@ export function loadProjectConfig(root) {
     throw new Error(`${configFileName}: configuration must be a JSON object.`);
   }
   const knownKeys = new Set([
+    '$schema',
     'cacheDir',
     'include',
     'exclude',
@@ -105,8 +106,9 @@ export function loadProjectConfig(root) {
   ]);
   const unknownKey = Object.keys(config).find((key) => !knownKeys.has(key));
   if (unknownKey) throw new Error(`${configFileName}: unknown option ${unknownKey}.`);
+  nonEmptyString(config, '$schema');
   const projects = stringArray(config, 'projects');
-  const projectOptions = [...knownKeys].filter((key) => key !== 'projects');
+  const projectOptions = [...knownKeys].filter((key) => !['$schema', 'projects'].includes(key));
   if (projects.length) {
     const mixedOption = projectOptions.find((key) => Object.hasOwn(config, key));
     if (mixedOption) {

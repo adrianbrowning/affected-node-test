@@ -329,7 +329,7 @@ test('help, version, and invalid input are useful before project configuration l
     assert.match(topLevel.stdout, /affected \[REF\]\s+Run tests affected by Git changes/);
     assert.match(topLevel.stdout, /Default concurrency is min\(4, available parallelism\), with a minimum of 1\./);
 
-    const commands = ['baseline', 'affected', 'related', 'since-last-run', 'watch', 'clear-cache'];
+    const commands = ['baseline', 'affected', 'related', 'since-last-run', 'watch', 'clear-cache', 'doctor'];
     for (const command of commands) {
       const result = run(cwd, command, '--help');
       assert.equal(result.status, 0, `${command}: ${result.stderr}`);
@@ -359,6 +359,73 @@ test('help, version, and invalid input are useful before project configuration l
     assert.doesNotMatch(invalidCommand.stderr, /SyntaxError|\n\s+at /);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('doctor validates single projects without running tests or mutating cache', () => {
+  const cwd = makeNonGitRepository();
+  const workerMarker = join(cwd, 'worker-ran');
+  writeFileSync(join(cwd, 'test', 'setup.mjs'), 'process.env.DOCTOR_SETUP = "loaded";\n');
+  writeFileSync(join(cwd, '.env.test'), 'DOCTOR_ENV=loaded\n');
+  writeFileSync(join(cwd, 'test', 'value.test.mjs'), [
+    "import { writeFileSync } from 'node:fs';",
+    `writeFileSync(${JSON.stringify(workerMarker)}, 'ran');`,
+    "import test from 'node:test';",
+    "test('value', () => {});",
+    '',
+  ].join('\n'));
+  writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({
+    $schema: './node_modules/affected-node-test/schema/affected-node-test.schema.json',
+    envFiles: ['.env.test'],
+    projectDependencies: ['package.json'],
+    setupFiles: ['test/setup.mjs'],
+  }));
+  try {
+    const result = run(cwd, 'doctor');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Node: v?\d+\.\d+\.\d+ \(supported; requires >=22\.15\.0\)/);
+    assert.match(result.stdout, new RegExp(`Project root: ${cwd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(result.stdout, /Tests: 1 discovered/);
+    assert.match(result.stdout, /Cache: missing \(\.affected-tests\/graph\.json\)/);
+    assert.match(result.stdout, /Git: available \(not a repository\)/);
+    assert.match(result.stdout, /envFiles: \.env\.test/);
+    assert.match(result.stdout, /setupFiles: test\/setup\.mjs/);
+    assert.match(result.stdout, /projectDependencies: package\.json/);
+    assert.match(result.stdout, /Ready: configuration and test discovery are valid\./);
+    assert.equal(existsSync(workerMarker), false);
+    assert.equal(existsSync(join(cwd, '.affected-tests')), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('doctor reports workspace projects and actionable missing-test remediation', () => {
+  const workspace = makeWorkspace();
+  const empty = mkdtempSync(join(tmpdir(), 'affected-tests-doctor-empty-'));
+  writeFileSync(join(empty, 'package.json'), '{"type":"module"}\n');
+  try {
+    const workspaceResult = run(workspace, 'doctor');
+    assert.equal(workspaceResult.status, 0, workspaceResult.stderr);
+    assert.match(workspaceResult.stdout, /Workspace projects: 2/);
+    assert.match(workspaceResult.stdout, /Project packages\/a/);
+    assert.match(workspaceResult.stdout, /Project packages\/b/);
+    assert.equal((workspaceResult.stdout.match(/Tests: 1 discovered/g) ?? []).length, 2);
+    assert.equal(existsSync(join(workspace, 'packages', 'a', '.affected-tests')), false);
+    assert.equal(existsSync(join(workspace, 'packages', 'b', '.affected-tests')), false);
+
+    const emptyResult = run(empty, 'doctor');
+    assert.equal(emptyResult.status, 1);
+    assert.match(emptyResult.stdout, /Tests: 0 discovered/);
+    assert.match(emptyResult.stderr, /No test files discovered\. Add conventional \.test\/\.spec files or configure include\./);
+    assert.equal(existsSync(join(empty, '.affected-tests')), false);
+
+    writeFileSync(join(empty, 'affected-node-test.config.json'), JSON.stringify({ $schema: 42 }));
+    const invalidSchema = run(empty, 'doctor');
+    assert.equal(invalidSchema.status, 1);
+    assert.match(invalidSchema.stderr, /\$schema must be a non-empty string\./);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(empty, { recursive: true, force: true });
   }
 });
 
