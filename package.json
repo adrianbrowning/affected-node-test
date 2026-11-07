@@ -15,6 +15,10 @@
     "docs:check": "mdcode update --quiet --check README.md",
     "docs:update": "mdcode update --quiet --apply README.md",
     "test": "node --test test/*.test.mjs",
+    "test:affected": "node bin/affected-node-test.mjs affected",
+    "test:baseline": "node bin/affected-node-test.mjs baseline",
+    "test:since-last-run": "node bin/affected-node-test.mjs since-last-run",
+    "test:watch": "node bin/affected-node-test.mjs watch",
     "test:unit": "node --test test/*.test.mjs"
   },
   "dependencies": {

@@ -46,6 +46,16 @@ Only `test/format.test.mjs` should be selected: it imports `format.mjs`, which i
 
 Run the integration suite with `npm test`. The tests exercise the CLI in temporary Git repositories and do not modify the working repository.
 
+This repository dogfoods its own selector:
+
+- `pnpm test:baseline` runs the full suite and builds the local dependency graph.
+- `pnpm test:affected` selects staged, unstaged, and untracked changes.
+- `pnpm test:since-last-run` uses recorded dependency metadata without Git.
+- `pnpm test:watch` performs an initial full run and then watches for related changes.
+
+These commands are development feedback loops. They do not replace the final full-suite gate.
+The checked-in root configuration limits self-hosted discovery to `test/**/*.test.mjs`, matching `pnpm test` and excluding the standalone example project's tests.
+
 README code blocks with `file=...` metadata are synchronized from checked-in examples by [mdcode-ts](https://github.com/adrianbrowning/mdcode-ts). Run `pnpm docs:update` to refresh them or `pnpm docs:check` to fail on drift.
 
 `pnpm run check:full` is the mandatory local and CI correctness gate: it checks documentation drift and runs the complete suite without affected-test selection. See [the CI gate documentation](docs/ci.md) for the supported Node matrix and required branch-protection status.
