@@ -938,6 +938,33 @@ test('workspace baseline runs configured projects with isolated caches', () => {
   }
 });
 
+test('workspace runs independent projects concurrently and reports lexical order', () => {
+  const cwd = makeWorkspace();
+  const tracker = join(cwd, 'project-events.log');
+  try {
+    for (const name of ['a', 'b']) {
+      const path = join(cwd, 'packages', name, 'test', 'value.test.mjs');
+      writeFileSync(path, [
+        "import { appendFileSync } from 'node:fs';",
+        "import test from 'node:test';",
+        `test('parallel ${name}', async () => {`,
+        `  appendFileSync(process.env.PROJECT_EVENTS, 'start:${name}\\n');`,
+        '  await new Promise((resolve) => setTimeout(resolve, 500));',
+        `  appendFileSync(process.env.PROJECT_EVENTS, 'end:${name}\\n');`,
+        '});',
+        '',
+      ].join('\n'));
+    }
+    const result = runWithEnv(cwd, { PROJECT_EVENTS: tracker }, 'baseline');
+    assert.equal(result.status, 0, result.stderr);
+    const events = readFileSync(tracker, 'utf8').trim().split('\n');
+    assert.equal(events.slice(0, 2).every((event) => event.startsWith('start:')), true);
+    assert.ok(result.stdout.indexOf('Project packages/a') < result.stdout.indexOf('Project packages/b'));
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('workspace rejects symlinked project, cache, and plan escapes', {
   skip: process.platform === 'win32' ? 'Symlink creation requires Windows developer privileges.' : false,
 }, () => {

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { isAbsolute, relative, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -7,6 +7,8 @@ import type { DependencyEdge } from './dependency-graph.ts';
 
 type AstNode = { type: string; [key: string]: unknown };
 type StaticImport = { kind: 'import' | 'require'; specifier: string };
+type CachedImports = { edges: DependencyEdge[]; mtimeMs: number; size: number; unresolved: boolean };
+export type StaticGraphCache = Map<string, CachedImports>;
 
 function isAstNode(value: unknown): value is AstNode {
   return Boolean(value) && typeof value === 'object' && typeof (value as { type?: unknown }).type === 'string';
@@ -85,7 +87,7 @@ function resolveSpecifier(parent: string, { kind, specifier }: StaticImport) {
   return resolved.startsWith('file:') ? fileURLToPath(resolved) : resolved;
 }
 
-export function buildStaticGraph(root: string, test: string, roots: string[]) {
+export function buildStaticGraph(root: string, test: string, roots: string[], cache: StaticGraphCache = new Map()) {
   const edges: DependencyEdge[] = [];
   const pending = [...roots];
   const visited = new Set<string>();
@@ -100,29 +102,47 @@ export function buildStaticGraph(root: string, test: string, roots: string[]) {
     visited.add(repositoryPath);
     if (!/\.(?:[cm]?[jt]s|[jt]sx)$/.test(repositoryPath)) continue;
     const absolutePath = new URL(repositoryPath, `${pathToFileURL(root).href}/`);
-    let parsed;
+    let direct: CachedImports;
     try {
-      const sourceType = /\.c[jt]s$/.test(repositoryPath) ? 'commonjs' : 'module';
-      parsed = importsIn(readFileSync(absolutePath, 'utf8'), sourceType);
+      const stat = statSync(absolutePath);
+      const saved = cache.get(repositoryPath);
+      if (saved && saved.mtimeMs === stat.mtimeMs && saved.size === stat.size) {
+        direct = saved;
+      } else {
+        const directEdges: DependencyEdge[] = [];
+        let directUnresolved = false;
+        try {
+          const sourceType = /\.c[jt]s$/.test(repositoryPath) ? 'commonjs' : 'module';
+          const parsed = importsIn(readFileSync(absolutePath, 'utf8'), sourceType);
+          directUnresolved = parsed.unresolved;
+          for (const imported of parsed.imports) {
+            let resolved;
+            try {
+              resolved = resolveSpecifier(fileURLToPath(absolutePath), imported);
+            } catch {
+              directUnresolved = true;
+              continue;
+            }
+            if (!inside(root, resolved)) continue;
+            const child = normalize(root, resolved);
+            if (child.startsWith('node_modules/') || child.startsWith('.git/') ||
+                child.startsWith('.affected-tests/')) continue;
+            directEdges.push([repositoryPath, child]);
+          }
+        } catch {
+          directUnresolved = true;
+        }
+        direct = { edges: directEdges, mtimeMs: stat.mtimeMs, size: stat.size, unresolved: directUnresolved };
+        cache.set(repositoryPath, direct);
+      }
     } catch {
       unresolved = true;
       continue;
     }
-    if (parsed.unresolved) unresolved = true;
-    for (const imported of parsed.imports) {
-      let resolved;
-      try {
-        resolved = resolveSpecifier(fileURLToPath(absolutePath), imported);
-      } catch {
-        unresolved = true;
-        continue;
-      }
-      if (!inside(root, resolved)) continue;
-      const child = normalize(root, resolved);
-      if (child.startsWith('node_modules/') || child.startsWith('.git/') ||
-          child.startsWith('.affected-tests/')) continue;
-      edges.push([repositoryPath, child]);
-      pending.push(child);
+    if (direct.unresolved) unresolved = true;
+    for (const edge of direct.edges) {
+      edges.push(edge);
+      pending.push(edge[1]);
     }
   }
   const uniqueEdges = [...new Map(edges.map((edge) => [JSON.stringify(edge), edge])).values()];

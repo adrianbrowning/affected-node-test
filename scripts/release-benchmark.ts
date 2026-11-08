@@ -43,6 +43,26 @@ function createProject(cwd: string, count: number, noisy = false) {
   }
 }
 
+function createSharedGraphProject(cwd: string, testCount: number, depth: number) {
+  mkdirSync(join(cwd, 'src'), { recursive: true });
+  mkdirSync(join(cwd, 'test'), { recursive: true });
+  writeFileSync(join(cwd, 'package.json'), '{"type":"module"}\n');
+  for (let index = 0; index < depth; index += 1) {
+    writeFileSync(join(cwd, 'src', `shared-${index}.mjs`),
+      index + 1 === depth ? 'export const value = 1;\n' :
+        `export { value } from './shared-${index + 1}.mjs';\n`);
+  }
+  for (let index = 0; index < testCount; index += 1) {
+    writeFileSync(join(cwd, 'test', `shared-${index}.test.mjs`), [
+      "import test from 'node:test';",
+      "import assert from 'node:assert/strict';",
+      "import { value } from '../src/shared-0.mjs';",
+      `test('shared ${index}', () => assert.equal(value, 1));`,
+      '',
+    ].join('\n'));
+  }
+}
+
 function initialize(cwd: string) {
   git(cwd, 'init', '-q');
   git(cwd, 'config', 'user.email', 'benchmark@example.invalid');
@@ -109,6 +129,13 @@ try {
   initialize(workspace);
   const workspaceBaseline = run(process.execPath, [cli, 'baseline', '--concurrency', '4'], workspace);
 
+  const widerWorkspace = join(fixtureRoot, 'wider-workspace');
+  for (const name of ['a', 'b', 'c', 'd']) createProject(join(widerWorkspace, 'packages', name), 5);
+  writeFileSync(join(widerWorkspace, 'affected-node-test.config.json'),
+    JSON.stringify({ projects: ['packages/a', 'packages/b', 'packages/c', 'packages/d'] }));
+  initialize(widerWorkspace);
+  const widerWorkspaceBaseline = run(process.execPath, [cli, 'baseline', '--concurrency', '4'], widerWorkspace);
+
   const largeOutputFixture = join(fixtureRoot, 'large-output');
   createProject(largeOutputFixture, 2, true);
   initialize(largeOutputFixture);
@@ -124,12 +151,19 @@ try {
   });
   const edgeWrites = Number(readFileSync(edgeWriteCount, 'utf8'));
 
+  const sharedFixture = join(fixtureRoot, 'shared-graph');
+  createSharedGraphProject(sharedFixture, 20, 128);
+  initialize(sharedFixture);
+  const sharedGraph = run(process.execPath, [cli, 'baseline', '--concurrency', '4'], sharedFixture);
+
   const measurements = {
     affected: { durationMs: affected, thresholdMs: 10_000, tests: '1/20' },
     baseline: { durationMs: baseline, thresholdMs: 30_000, tests: 20 },
     largeOutput: { bytes: 2 * 512 * 1024, durationMs: largeOutput, thresholdMs: 15_000, tests: 2 },
     moduleDense: { durationMs: moduleDense, edgeWrites, modules: moduleCount, thresholdMs: 15_000, writeThreshold: 4 },
+    sharedGraph: { durationMs: sharedGraph, tests: 20, sharedModules: 128, thresholdMs: 30_000 },
     workspaceBaseline: { durationMs: workspaceBaseline, thresholdMs: 30_000, projects: 2, tests: 20 },
+    widerWorkspaceBaseline: { durationMs: widerWorkspaceBaseline, thresholdMs: 30_000, projects: 4, tests: 20 },
   };
   console.log(JSON.stringify({ node: process.version, platform: `${process.platform}-${process.arch}`, measurements }, null, 2));
   const exceeded = Object.entries(measurements).find(([, measurement]) => measurement.durationMs > measurement.thresholdMs);

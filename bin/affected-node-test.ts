@@ -26,6 +26,7 @@ import type { DependencyEdge } from '../src/dependency-graph.ts';
 import { diagnose } from '../src/doctor.ts';
 import { createOutputBuffer } from '../src/output-buffer.ts';
 import { buildStaticGraph } from '../src/static-graph.ts';
+import type { StaticGraphCache } from '../src/static-graph.ts';
 import { getGitChanges, gitMergeBase, gitRevision } from '../src/git-changes.ts';
 import {
   executeSelectionRun,
@@ -311,6 +312,7 @@ type GraphTestResult = {
   stdout: OutputBuffer;
   unresolvedStatic: boolean;
 };
+let staticGraphCache: StaticGraphCache = new Map();
 function parseEdge(line: string): DependencyEdge {
   const parsed: unknown = JSON.parse(line);
   if (!Array.isArray(parsed) || parsed.length !== 2 || parsed.some((part) => typeof part !== 'string')) {
@@ -347,7 +349,7 @@ function graphForTest(test: string) {
           test,
           ...setupFiles,
           ...globalSetupFiles,
-        ]);
+        ], staticGraphCache);
         edges.push(...staticGraph.edges);
         const uniqueEdges = [...new Map(edges.map((edge) => [JSON.stringify(edge), edge])).values()];
         resolveResult({
@@ -381,6 +383,7 @@ async function runTests(
   oldGraph: DependencyGraph = {},
   historicalDurations: Record<string, number> = {},
 ): Promise<DependencyRunResult> {
+  staticGraphCache = new Map();
   const resultGraph: DependencyGraph = { ...oldGraph };
   const teardowns: (() => unknown | Promise<unknown>)[] = [];
   if (tests.length) {

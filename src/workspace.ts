@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { readFileSync, rmSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
@@ -25,6 +25,32 @@ type ProjectRun = {
   project: WorkspaceProject;
   suppressNoop?: boolean;
 };
+type ProjectResult = { status: number; stderr: string; stdout: string };
+async function runProjectProcesses(jobs: { args: string[]; cwd: string; env?: NodeJS.ProcessEnv }[]) {
+  const results: ProjectResult[] = new Array(jobs.length);
+  let next = 0;
+  async function worker() {
+    while (next < jobs.length) {
+      const index = next++;
+      const job = jobs[index];
+      results[index] = await new Promise<ProjectResult>((resolveResult, rejectResult) => {
+        const child = spawn(process.execPath, job.args, {
+          cwd: job.cwd, env: job.env ?? process.env, stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout?.setEncoding('utf8');
+        child.stderr?.setEncoding('utf8');
+        child.stdout?.on('data', (chunk: string) => { stdout += chunk; });
+        child.stderr?.on('data', (chunk: string) => { stderr += chunk; });
+        child.once('error', rejectResult);
+        child.once('close', (status) => resolveResult({ status: status ?? 1, stdout, stderr }));
+      });
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, () => worker()));
+  return results;
+}
 const supportedCommands: WorkspaceCommand[] = [
   'baseline', 'since-last-run', 'last-failed', 'clear-cache', 'related', 'affected', 'affected-first', 'watch',
 ];
@@ -283,7 +309,7 @@ function splitAffectedFirstArgs(args: string[]) {
   return { commandArgs, phase, plan };
 }
 
-function runWorkspaceAffectedFirst({ root, projects, args, cliPath }: {
+async function runWorkspaceAffectedFirst({ root, projects, args, cliPath }: {
   args: string[];
   cliPath: string;
   projects: WorkspaceProject[];
@@ -332,28 +358,29 @@ function runWorkspaceAffectedFirst({ root, projects, args, cliPath }: {
       (plan as Record<string, unknown>).state !== 'affected-passed')) {
     throw new Error('Workspace partition plan affected phase did not complete successfully; rerun the affected phase.');
   }
-  const runPhase = (phase: 'affected' | 'remaining') => {
-    for (let index = 0; index < plans.length; index += 1) {
-      const item = plans[index];
-      if (phase === 'remaining') writeJsonAtomically(resolve(item.project.root, item.path), embedded.get(item.project.path));
-      const childArgs = [
+  const runPhase = async (phase: 'affected' | 'remaining') => {
+    if (phase === 'remaining') {
+      for (const item of plans) writeJsonAtomically(resolve(item.project.root, item.path), embedded.get(item.project.path));
+    }
+    const results = await runProjectProcesses(plans.map((item) => ({
+      cwd: item.project.root,
+      args: [
         cliPath,
         'affected-first',
         ...(phase === 'affected' && ref ? [ref] : []),
         '--phase', phase,
         '--plan', item.path,
         ...forwardedOptions,
-      ];
-      const result = spawnSync(process.execPath, childArgs, {
-        cwd: item.project.root,
-        encoding: 'utf8',
-        env: {
+      ],
+      env: {
           ...process.env,
           AFFECTED_NODE_TEST_CHANGED_FILES: JSON.stringify(item.changes),
           AFFECTED_NODE_TEST_PROJECT_PATH: item.project.path,
         },
-      });
-      if (result.error) throw result.error;
+    })));
+    for (let index = 0; index < plans.length; index += 1) {
+      const item = plans[index];
+      const result = results[index];
       if (jsonOutput) {
         try {
           documents[index][phase] = JSON.parse(result.stdout);
@@ -374,7 +401,7 @@ function runWorkspaceAffectedFirst({ root, projects, args, cliPath }: {
   };
   try {
     let exitCode = 0;
-    if (split.phase !== 'remaining') exitCode = runPhase('affected');
+    if (split.phase !== 'remaining') exitCode = await runPhase('affected');
     if (workspacePlanPath && split.phase === 'affected') {
       writeJsonAtomically(workspacePlanPath, {
         schemaVersion: 1,
@@ -386,7 +413,7 @@ function runWorkspaceAffectedFirst({ root, projects, args, cliPath }: {
           .map((project) => ({ path: project.path, plan: embedded.get(project.path) })),
       });
     }
-    if (exitCode === 0 && split.phase !== 'affected') exitCode = runPhase('remaining');
+    if (exitCode === 0 && split.phase !== 'affected') exitCode = await runPhase('remaining');
     if (workspacePlanPath && split.phase === 'remaining') {
       writeJsonAtomically(workspacePlanPath, {
         ...stored,
@@ -542,13 +569,12 @@ export async function runWorkspace({ root, projects, command: requestedCommand, 
   let exitCode = 0;
   let displayedProjects = 0;
   const projectDocuments: { path: string; result: unknown }[] = [];
-  for (const { project, command: projectCommand, args: projectArgs, suppressNoop = false } of projectRuns) {
-    const result = spawnSync(process.execPath, [cliPath, projectCommand, ...projectArgs], {
-      cwd: project.root,
-      encoding: 'utf8',
-      env: process.env,
-    });
-    if (result.error) throw result.error;
+  const projectResults = await runProjectProcesses(projectRuns.map(({ project, command: projectCommand, args: projectArgs }) => ({
+    args: [cliPath, projectCommand, ...projectArgs], cwd: project.root,
+  })));
+  for (let index = 0; index < projectRuns.length; index += 1) {
+    const { project, suppressNoop = false } = projectRuns[index];
+    const result = projectResults[index];
     const noOp = !jsonOutput && suppressNoop && result.status === 0 && !result.stderr &&
       result.stdout.trim() === 'No tests changed since last run.';
     if (noOp) continue;
