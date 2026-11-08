@@ -7,7 +7,8 @@ import { getGitChanges } from './git-changes.ts';
 import { selectionProvider } from './selection-document.ts';
 import type { SelectionCommand } from './selection-document.ts';
 import { watchReadyMessageType } from './watch-protocol.ts';
-import type { CommandName } from './cli-help.ts';
+import { forwardedCliOptions } from './cli-command.ts';
+import type { CliOptions } from './cli-command.ts';
 import { isNodeError } from './errors.ts';
 import { terminateProcessTree } from './process-control.ts';
 import { writeJsonAtomically } from './cache.ts';
@@ -56,38 +57,6 @@ const supportedCommands: WorkspaceCommand[] = [
 ];
 
 const normal = (path: string) => path.split(sep).join('/');
-
-function splitCommandArgs(args: string[]) {
-  const positionals: string[] = [];
-  const forwardedOptions: string[] = [];
-  for (let index = 0; index < args.length; index += 1) {
-    if (args[index] === '--concurrency') {
-      forwardedOptions.push(args[index], args[index + 1]);
-      index += 1;
-    } else if (args[index] === '--dry-run' || args[index] === '--output=json') {
-      forwardedOptions.push(args[index]);
-    } else {
-      positionals.push(args[index]);
-    }
-  }
-  return { forwardedOptions, positionals };
-}
-
-function extractProjectFilters(args: string[]) {
-  const commandArgs: string[] = [];
-  const projectFilters: string[] = [];
-  for (let index = 0; index < args.length; index += 1) {
-    if (args[index] !== '--project') {
-      commandArgs.push(args[index]);
-      continue;
-    }
-    const filter = args[index + 1];
-    if (!filter || filter.startsWith('-')) throw new Error('--project requires a non-empty glob.');
-    projectFilters.push(filter);
-    index += 1;
-  }
-  return { commandArgs, projectFilters };
-}
 
 function baselineVerb(options: string[]) {
   return options.includes('--dry-run') ? 'previewing' : 'running';
@@ -287,47 +256,21 @@ function readWorkspacePartitionPlan(path: string): WorkspacePartitionPlan {
   return plan as WorkspacePartitionPlan;
 }
 
-function splitAffectedFirstArgs(args: string[]) {
-  const commandArgs: string[] = [];
-  let phase: 'affected' | 'remaining' | undefined;
-  let plan: string | undefined;
-  for (let index = 0; index < args.length; index += 1) {
-    if (args[index] === '--phase') {
-      const value = args[index + 1];
-      if (value !== 'affected' && value !== 'remaining') throw new Error('--phase must be affected or remaining.');
-      phase = value;
-      index += 1;
-    } else if (args[index] === '--plan') {
-      plan = args[index + 1];
-      if (!plan || plan.startsWith('-')) throw new Error('--plan requires a workspace-relative path.');
-      index += 1;
-    } else {
-      commandArgs.push(args[index]);
-    }
-  }
-  if (Boolean(phase) !== Boolean(plan)) throw new Error('--phase and --plan must be used together.');
-  return { commandArgs, phase, plan };
-}
-
-async function runWorkspaceAffectedFirst({ root, projects, args, cliPath }: {
-  args: string[];
+async function runWorkspaceAffectedFirst({ root, projects, options, cliPath }: {
   cliPath: string;
+  options: CliOptions;
   projects: WorkspaceProject[];
   root: string;
 }) {
-  const split = splitAffectedFirstArgs(args);
-  const { forwardedOptions, positionals } = splitCommandArgs(split.commandArgs);
-  if (positionals.length > 1) throw new Error('Usage: affected-node-test affected-first [git-ref] [--concurrency N]');
-  if (split.phase === 'remaining' && positionals.length) {
-    throw new Error('The remaining phase reads REF from the plan; do not pass REF again.');
-  }
-  const workspacePlanPath = split.plan ? resolve(root, split.plan) : undefined;
+  const { phase, plan, positionals } = options;
+  const forwardedOptions = forwardedCliOptions(options);
+  const workspacePlanPath = plan ? resolve(root, plan) : undefined;
   if (workspacePlanPath) {
-    if (isAbsolute(split.plan ?? '') || !isContainedPath(root, workspacePlanPath)) {
+    if (isAbsolute(plan ?? '') || !isContainedPath(root, workspacePlanPath)) {
       throw new Error('--plan must be a workspace-relative path within the workspace root.');
     }
   }
-  const stored = split.phase === 'remaining' && workspacePlanPath
+  const stored = phase === 'remaining' && workspacePlanPath
     ? readWorkspacePartitionPlan(workspacePlanPath)
     : undefined;
   const ref = stored?.ref ?? positionals[0];
@@ -338,7 +281,7 @@ async function runWorkspaceAffectedFirst({ root, projects, args, cliPath }: {
       stored.changesFingerprint !== repositoryFilesFingerprint(root, changes.files))) {
     throw new Error('Workspace partition plan is stale: changed files differ; rerun the affected phase.');
   }
-  const jsonOutput = forwardedOptions.includes('--output=json');
+  const jsonOutput = options.output === 'json';
   const plans = projects.map((project) => ({
     project,
     path: `.affected-tests/workspace-partition-${process.pid}.json`,
@@ -401,8 +344,8 @@ async function runWorkspaceAffectedFirst({ root, projects, args, cliPath }: {
   };
   try {
     let exitCode = 0;
-    if (split.phase !== 'remaining') exitCode = await runPhase('affected');
-    if (workspacePlanPath && split.phase === 'affected') {
+    if (phase !== 'remaining') exitCode = await runPhase('affected');
+    if (workspacePlanPath && phase === 'affected') {
       writeJsonAtomically(workspacePlanPath, {
         schemaVersion: 1,
         ref: ref ?? null,
@@ -413,8 +356,8 @@ async function runWorkspaceAffectedFirst({ root, projects, args, cliPath }: {
           .map((project) => ({ path: project.path, plan: embedded.get(project.path) })),
       });
     }
-    if (exitCode === 0 && split.phase !== 'affected') exitCode = await runPhase('remaining');
-    if (workspacePlanPath && split.phase === 'remaining') {
+    if (exitCode === 0 && phase !== 'affected') exitCode = await runPhase('remaining');
+    if (workspacePlanPath && phase === 'remaining') {
       writeJsonAtomically(workspacePlanPath, {
         ...stored,
         projects: projects.map((project) => ({ path: project.path, plan: embedded.get(project.path) })),
@@ -437,21 +380,22 @@ async function runWorkspaceAffectedFirst({ root, projects, args, cliPath }: {
   }
 }
 
-export async function runWorkspace({ root, projects, command: requestedCommand, args: rawArgs, cliPath }: {
-  args: string[];
+export async function runWorkspace({ root, projects, options, cliPath }: {
   cliPath: string;
-  command: CommandName;
+  options: CliOptions;
   projects: string[];
   root: string;
 }) {
-  if (!supportedCommands.includes(requestedCommand as WorkspaceCommand)) {
-    const command: CommandName = requestedCommand;
+  if (!supportedCommands.includes(options.command as WorkspaceCommand)) {
+    const command = options.command;
     throw new Error(`Workspace command is not implemented yet: ${command}`);
   }
-  const command = requestedCommand as WorkspaceCommand;
+  const command = options.command as WorkspaceCommand;
 
   const allProjects = resolveWorkspaceProjects({ root, projects });
-  const { commandArgs: args, projectFilters } = extractProjectFilters(rawArgs);
+  const { projectFilters, positionals } = options;
+  const forwardedOptions = forwardedCliOptions(options);
+  const args = [...positionals, ...forwardedOptions];
   const resolvedProjects = projectFilters.length
     ? allProjects.filter((project) => projectFilters.some((filter) => matchesPatterns(project.path, [filter])))
     : allProjects;
@@ -459,22 +403,19 @@ export async function runWorkspace({ root, projects, command: requestedCommand, 
     throw new Error(`No workspace projects matched ${projectFilters.map((filter) => `--project ${filter}`).join(', ')}.`);
   }
   if (command === 'affected-first') {
-    return runWorkspaceAffectedFirst({ root, projects: resolvedProjects, args, cliPath });
+    return runWorkspaceAffectedFirst({ root, projects: resolvedProjects, options, cliPath });
   }
-  const jsonOutput = args.includes('--output=json');
+  const jsonOutput = options.output === 'json';
   const log = jsonOutput ? console.error : console.log;
   let routing: Record<string, unknown> = { kind: 'all-projects' };
 
   if (command === 'watch') {
-    const { forwardedOptions, positionals } = splitCommandArgs(args);
-    if (positionals.length) throw new Error(`Unexpected argument: ${positionals[0]}`);
     return runWorkspaceWatch({ projects: resolvedProjects, args: forwardedOptions, cliPath });
   }
 
   let projectRuns: ProjectRun[] = resolvedProjects.map((project) => ({ project, command, args }));
   if (command === 'related') {
-    const { forwardedOptions, positionals: files } = splitCommandArgs(args);
-    if (!files.length) throw new Error('Usage: affected-node-test related <file...> [--concurrency N]');
+    const files = positionals;
 
     const groupedFiles = new Map<string, string[]>(resolvedProjects.map((project) => [project.path, []]));
     let workspaceLevelFile: string | undefined;
@@ -516,10 +457,6 @@ export async function runWorkspace({ root, projects, command: requestedCommand, 
 
   let printNoChangedFiles = false;
   if (command === 'affected') {
-    const { forwardedOptions, positionals } = splitCommandArgs(args);
-    if (positionals.length > 1) {
-      throw new Error('Usage: affected-node-test affected [git-ref] [--concurrency N]');
-    }
     const ref = positionals[0];
     const changed = getGitChanges({
       exclude: (workspacePath) => {
@@ -597,7 +534,7 @@ export async function runWorkspace({ root, projects, command: requestedCommand, 
   if (jsonOutput) {
     console.log(JSON.stringify({
       schemaVersion: 1,
-      mode: args.includes('--dry-run') ? 'preview' : 'run',
+      mode: options.dryRun ? 'preview' : 'run',
       command,
       provider: command === 'clear-cache' ? 'cache' : selectionProvider(command),
       workspaceRoot: root,

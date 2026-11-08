@@ -4,7 +4,7 @@ import type { ChildProcess } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, watch as watchFiles } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { resolve, relative, join, sep, isAbsolute } from 'node:path';
-import { availableParallelism, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { writeJsonAtomically } from '../src/cache.ts';
@@ -12,7 +12,7 @@ import { isContainedPath } from '../src/contained-path.ts';
 import { commandHelp, isCommandName, topLevelHelp } from '../src/cli-help.ts';
 import type { CommandName } from '../src/cli-help.ts';
 import { configurationFingerprint } from '../src/config.ts';
-import { parseConcurrency } from '../src/concurrency.ts';
+import { parseCliOptions } from '../src/cli-command.ts';
 import { applyDependencyRun, loadDependencyRecord } from '../src/dependency-record.ts';
 import type {
   DependencyGraph,
@@ -116,81 +116,13 @@ if (command === 'init') {
     fail(errorMessage(error));
   }
 }
-function parseArguments(values: string[]) {
-  const positionals: string[] = [];
-  let dryRun = false;
-  let output: 'human' | 'json' = 'human';
-  const projectFilters: string[] = [];
-  let concurrency = Math.max(1, Math.min(4, availableParallelism()));
-  let phase: 'affected' | 'remaining' | undefined;
-  let plan: string | undefined;
-  for (let index = 0; index < values.length; index += 1) {
-    if (values[index] === '--concurrency') {
-      const value = values[index + 1];
-      try {
-        concurrency = parseConcurrency(value, availableParallelism());
-      } catch (error: unknown) {
-        failUsage(errorMessage(error), commandHelp(command));
-      }
-      index += 1;
-    } else if (values[index] === '--dry-run') {
-      if (!['baseline', 'affected', 'related', 'since-last-run', 'last-failed'].includes(command)) {
-        failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
-      }
-      dryRun = true;
-    } else if (values[index] === '--output=json') {
-      if (!['baseline', 'affected', 'affected-first', 'related', 'since-last-run', 'last-failed'].includes(command)) {
-        failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
-      }
-      output = 'json';
-    } else if (values[index] === '--project') {
-      if (!['baseline', 'affected', 'affected-first', 'related', 'since-last-run', 'last-failed', 'watch', 'clear-cache'].includes(command)) {
-        failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
-      }
-      const value = values[index + 1];
-      if (!value || value.startsWith('-')) {
-        failUsage('--project requires a non-empty glob.', commandHelp(command));
-      }
-      projectFilters.push(value);
-      index += 1;
-    } else if (values[index] === '--phase') {
-      if (command !== 'affected-first') failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
-      const value = values[index + 1];
-      if (value !== 'affected' && value !== 'remaining') {
-        failUsage('--phase must be affected or remaining.', commandHelp(command));
-      }
-      phase = value === 'affected' ? 'affected' : 'remaining';
-      index += 1;
-    } else if (values[index] === '--plan') {
-      if (command !== 'affected-first') failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
-      const value = values[index + 1];
-      if (!value || value.startsWith('-')) failUsage('--plan requires a project-relative path.', commandHelp(command));
-      plan = value;
-      index += 1;
-    } else if (values[index].startsWith('-')) {
-      failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
-    } else {
-      positionals.push(values[index]);
-    }
+const options = (() => {
+  try {
+    return parseCliOptions(command, args);
+  } catch (error: unknown) {
+    return failUsage(errorMessage(error), commandHelp(command));
   }
-  return { concurrency, dryRun, output, phase, plan, positionals, projectFilters };
-}
-const options = parseArguments(args);
-if (command === 'related' && !options.positionals.length) {
-  failUsage('related requires at least one FILE.', commandHelp(command));
-}
-if (['affected', 'affected-first'].includes(command) && options.positionals.length > 1) {
-  failUsage(`Unexpected argument: ${options.positionals[1]}`, commandHelp(command));
-}
-if (command === 'affected-first' && Boolean(options.phase) !== Boolean(options.plan)) {
-  failUsage('--phase and --plan must be used together.', commandHelp(command));
-}
-if (command === 'affected-first' && options.phase === 'remaining' && options.positionals.length) {
-  failUsage('The remaining phase reads REF from the plan; do not pass REF again.', commandHelp(command));
-}
-if (!['affected', 'affected-first', 'related'].includes(command) && options.positionals.length) {
-  failUsage(`Unexpected argument: ${options.positionals[0]}`, commandHelp(command));
-}
+})();
 const activeChildren = new Set<ChildProcess>();
 const signalExitCodes = { SIGINT: 130, SIGTERM: 143 } as const;
 type InterruptSignal = keyof typeof signalExitCodes;
@@ -233,8 +165,7 @@ if (projectConfig.projects.length) {
     const status = await runWorkspace({
       root,
       projects: projectConfig.projects,
-      command,
-      args,
+      options,
       cliPath: fileURLToPath(import.meta.url),
     });
     process.exit(status);
