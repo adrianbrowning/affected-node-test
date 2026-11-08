@@ -20,12 +20,13 @@ Run `pnpm review:performance` to build the package, create disposable Git fixtur
 
 | Scenario | Fixture | Result | Threshold |
 | --- | ---: | ---: | ---: |
-| Baseline | 20 tests | 2,499 ms | 30,000 ms |
-| Affected | 1 of 20 tests | 945 ms | 10,000 ms |
-| Workspace baseline | 2 projects, 20 tests | 4,218 ms | 30,000 ms |
-| Large output | 2 tests, 1 MiB total | 905 ms | 15,000 ms |
+| Baseline | 20 tests | 2,517 ms | 30,000 ms |
+| Affected | 1 of 20 tests | 938 ms | 10,000 ms |
+| Workspace baseline | 2 projects, 20 tests | 3,428 ms | 30,000 ms |
+| Large output | 2 tests, 1 MiB total | 825 ms | 15,000 ms |
+| Module-dense baseline | 256 runtime imports | 1,016 ms, 1 edge-log write | 15,000 ms, at most 4 writes |
 
-The thresholds are broad release regression guards, not cross-machine performance claims. Runtime dependency capture still performs one synchronous append per observed edge. The representative review passed, so batching is a non-blocking optimization tracked by [issue #20](https://github.com/adrianbrowning/affected-node-test/issues/20).
+The thresholds are broad release regression guards, not cross-machine performance claims. Before batching, the 128-module integration fixture made 129 synchronous edge-log writes; the same fixture now makes one while retaining every edge. The repeatable release benchmark independently records one write for 256 computed runtime imports. Workers flush bounded 64 KiB batches and flush once more on normal exit; interrupted runs preserve the previous graph as documented in [process and signal behavior](process-behavior.md#runtime-edge-batching).
 
 ## Documentation
 
@@ -37,4 +38,4 @@ The thresholds are broad release regression guards, not cross-machine performanc
 
 ## Release decision
 
-Proceed to package metadata and publishing-policy review. The path-validation and demo findings were fixed here. Runtime edge batching is explicitly non-blocking and linked above. The public release remains contingent on completing the package, license, changelog, provenance, clean-install, and release-procedure acceptance criteria in issue #18.
+Proceed to package metadata and publishing-policy review. The path-validation, demo, and runtime edge-write findings were fixed here. The public release remains contingent on completing the package, license, changelog, provenance, clean-install, and release-procedure acceptance criteria in issue #18.

@@ -232,5 +232,5 @@ Project roots are validated, deduplicated, rejected when overlapping, and run in
 - Each test file runs in its own Node process rather than using native multi-file test concurrency. Output is buffered and printed in deterministic test-file order.
 - The graph only tracks `file:` dependencies **inside the Git repository**. Changes in external linked packages are not handled.
 - Non-module data/config files read through `fs` and some worker process patterns require explicit configuration or a full run. User-transformed TypeScript/JSX syntax unsupported by Acorn retains runtime edges and deliberately triggers conservative code-change selection.
-- The naive hook appends a line for every import; production code should batch edges and reduce synchronous I/O.
+- Runtime edges are synchronously flushed in bounded batches and on normal worker exit. Forced termination may discard the current unflushed batch, but interrupted runs preserve the previous graph. See [process and signal behavior](docs/process-behavior.md#runtime-edge-batching).
 - A changed non-JavaScript file that tests read via `fs` might not trigger a selected run. Full-suite CI remains essential.

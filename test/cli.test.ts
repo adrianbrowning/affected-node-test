@@ -2393,3 +2393,69 @@ test('affected-first JSON reports both partitions and the completed inventory', 
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('runtime dependency capture batches writes without losing module-dense edges', () => {
+  const cwd = makeRepository();
+  const writeCount = join(tmpdir(), `affected-edge-writes-${process.pid}-${Date.now()}.txt`);
+  const moduleCount = 128;
+  try {
+    mkdirSync(join(cwd, 'src', 'dense'));
+    for (let index = 0; index < moduleCount; index += 1) {
+      writeFileSync(join(cwd, 'src', 'dense', `module-${index}.mjs`), `export const value = ${index};\n`);
+    }
+    writeFileSync(join(cwd, 'test', 'count-edge-writes.mjs'), [
+      "import fs, { writeFileSync } from 'node:fs';",
+      "import { syncBuiltinESMExports } from 'node:module';",
+      'const originalAppend = fs.appendFileSync;',
+      'let edgeWrites = 0;',
+      "writeFileSync(process.env.EDGE_WRITE_COUNT, '0');",
+      'fs.appendFileSync = (path, ...args) => {',
+      "  if (String(path).endsWith('edges.jsonl')) {",
+      '    edgeWrites += 1;',
+      '    writeFileSync(process.env.EDGE_WRITE_COUNT, String(edgeWrites));',
+      '  }',
+      '  return originalAppend(path, ...args);',
+      '};',
+      'syncBuiltinESMExports();',
+      '',
+    ].join('\n'));
+    writeFileSync(join(cwd, 'test', 'dense.test.mjs'), [
+      "import test from 'node:test';",
+      "import assert from 'node:assert/strict';",
+      `test('loads ${moduleCount} computed modules', async () => {`,
+      '  let total = 0;',
+      `  for (let index = 0; index < ${moduleCount}; index += 1) {`,
+      '    const loaded = await import(`../src/dense/module-${index}.mjs`);',
+      '    total += loaded.value;',
+      '  }',
+      `  assert.equal(total, ${(moduleCount - 1) * moduleCount / 2});`,
+      '});',
+      '',
+    ].join('\n'));
+    rmSync(join(cwd, 'test', 'value.test.mjs'));
+    writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({
+      include: ['test/dense.test.mjs'],
+      nodeArgs: ['--import', './test/count-edge-writes.mjs'],
+    }));
+    git(cwd, 'add', '.');
+    git(cwd, 'commit', '-qm', 'add module-dense fixture');
+
+    const baseline = runWithEnv(cwd, { EDGE_WRITE_COUNT: writeCount }, 'baseline');
+    assert.equal(baseline.status, 0, baseline.stderr);
+    assert.equal(Number(readFileSync(writeCount, 'utf8')), 1,
+      `expected one edge-log write, received ${readFileSync(writeCount, 'utf8')}`);
+    const graph = JSON.parse(readFileSync(join(cwd, '.affected-tests', 'graph.json'), 'utf8')).graph;
+    const dependencies = new Set(graph['test/dense.test.mjs'].map((edge: [string, string]) => edge[1]));
+    for (let index = 0; index < moduleCount; index += 1) {
+      assert.ok(dependencies.has(`src/dense/module-${index}.mjs`));
+    }
+
+    writeFileSync(join(cwd, 'src', 'dense', 'module-0.mjs'), 'export const value = 0; // changed\n');
+    const affected = runWithEnv(cwd, { EDGE_WRITE_COUNT: writeCount }, 'affected', 'HEAD');
+    assert.equal(affected.status, 0, affected.stderr);
+    assert.match(affected.stdout, /Selected 1\/1 test file\(s\)/);
+  } finally {
+    rmSync(writeCount, { force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
