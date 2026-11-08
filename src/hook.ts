@@ -3,6 +3,7 @@ import { registerHooks } from 'node:module';
 import { appendFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { relative, isAbsolute, sep } from 'node:path';
+import { normalizeRepositoryPath } from './repository-path.ts';
 
 const log = process.env.AFFECTED_TESTS_EDGES_FILE;
 const root = process.env.AFFECTED_TESTS_ROOT;
@@ -19,7 +20,10 @@ if (log && root) {
         const parent = fileURLToPath(context.parentURL);
         const child = fileURLToPath(resolved.url);
         if (inside(parent, root) && inside(child, root)) {
-          appendFileSync(log, JSON.stringify([relative(root, parent), relative(root, child)]) + '\n');
+          appendFileSync(log, JSON.stringify([
+            normalizeRepositoryPath(relative(root, parent)),
+            normalizeRepositoryPath(relative(root, child)),
+          ]) + '\n');
         }
       }
       return resolved;
