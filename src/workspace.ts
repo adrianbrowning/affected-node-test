@@ -27,7 +27,8 @@ type ProjectRun = {
   suppressNoop?: boolean;
 };
 type ProjectResult = { status: number; stderr: string; stdout: string };
-async function runProjectProcesses(jobs: { args: string[]; cwd: string; env?: NodeJS.ProcessEnv }[]) {
+type ProjectInvocation = ProjectRun & { env?: NodeJS.ProcessEnv };
+async function runProjectProcesses(jobs: ProjectInvocation[], cliPath: string) {
   const results: ProjectResult[] = new Array(jobs.length);
   let next = 0;
   async function worker() {
@@ -35,8 +36,8 @@ async function runProjectProcesses(jobs: { args: string[]; cwd: string; env?: No
       const index = next++;
       const job = jobs[index];
       results[index] = await new Promise<ProjectResult>((resolveResult, rejectResult) => {
-        const child = spawn(process.execPath, job.args, {
-          cwd: job.cwd, env: job.env ?? process.env, stdio: ['ignore', 'pipe', 'pipe'],
+        const child = spawn(process.execPath, [cliPath, job.command, ...job.args], {
+          cwd: job.project.root, env: job.env ?? process.env, stdio: ['ignore', 'pipe', 'pipe'],
         });
         let stdout = '';
         let stderr = '';
@@ -306,10 +307,9 @@ async function runWorkspaceAffectedFirst({ root, projects, options, cliPath }: {
       for (const item of plans) writeJsonAtomically(resolve(item.project.root, item.path), embedded.get(item.project.path));
     }
     const results = await runProjectProcesses(plans.map((item) => ({
-      cwd: item.project.root,
+      project: item.project,
+      command: 'affected-first',
       args: [
-        cliPath,
-        'affected-first',
         ...(phase === 'affected' && ref ? [ref] : []),
         '--phase', phase,
         '--plan', item.path,
@@ -320,7 +320,7 @@ async function runWorkspaceAffectedFirst({ root, projects, options, cliPath }: {
           AFFECTED_NODE_TEST_CHANGED_FILES: JSON.stringify(item.changes),
           AFFECTED_NODE_TEST_PROJECT_PATH: item.project.path,
         },
-    })));
+    })), cliPath);
     for (let index = 0; index < plans.length; index += 1) {
       const item = plans[index];
       const result = results[index];
@@ -506,9 +506,7 @@ export async function runWorkspace({ root, projects, options, cliPath }: {
   let exitCode = 0;
   let displayedProjects = 0;
   const projectDocuments: { path: string; result: unknown }[] = [];
-  const projectResults = await runProjectProcesses(projectRuns.map(({ project, command: projectCommand, args: projectArgs }) => ({
-    args: [cliPath, projectCommand, ...projectArgs], cwd: project.root,
-  })));
+  const projectResults = await runProjectProcesses(projectRuns, cliPath);
   for (let index = 0; index < projectRuns.length; index += 1) {
     const { project, suppressNoop = false } = projectRuns[index];
     const result = projectResults[index];
