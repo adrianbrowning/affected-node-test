@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { terminateProcessTree } from '../src/process-control.ts';
 
 const cli = fileURLToPath(new URL('../bin/affected-node-test.ts', import.meta.url));
@@ -913,7 +913,7 @@ test('configured patterns reuse one repository walk for a command', () => {
       projectDependencies: ['src/*.mjs', 'package.json'],
       setupFiles: ['count-walks.mjs'],
     }));
-    const result = runWithEnv(cwd, { NODE_OPTIONS: `--import=${preload}` }, 'baseline');
+    const result = runWithEnv(cwd, { NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` }, 'baseline');
     assert.equal(result.status, 0, result.stderr);
     assert.ok(Number(readFileSync(count, 'utf8')) <= 2,
       `expected one repository walk, received ${readFileSync(count, 'utf8')}`);
