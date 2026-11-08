@@ -1696,19 +1696,19 @@ test('large worker output preserves reporting and temporary-file cleanup on pass
   const cwd = makeRepository();
   const testPath = join(cwd, 'test', 'value.test.mjs');
   const temporaryDirectories = edgeTemporaryDirectories();
-  writeFileSync(testPath, `${readFileSync(testPath, 'utf8')}\nconsole.log('spill:' + 'x'.repeat(300_000));\n`);
+  writeFileSync(testPath, `${readFileSync(testPath, 'utf8')}\nawait new Promise((resolve) => process.stdout.write('spill:' + 'x'.repeat(300_000) + ':spill-end\\n', resolve));\n`);
   git(cwd, 'add', 'test/value.test.mjs');
   git(cwd, 'commit', '-qm', 'add large output');
   try {
     const passing = run(cwd, 'baseline', '--concurrency', '1');
     assert.equal(passing.status, 0, passing.stderr);
-    assert.match(passing.stdout, /spill:x{100}/);
+    assert.equal(passing.stdout.match(/spill:(x+):spill-end/)?.[1].length, 300_000);
     assert.deepEqual(edgeTemporaryDirectories(), temporaryDirectories);
 
     writeFileSync(testPath, `${readFileSync(testPath, 'utf8')}\nthrow new Error('after spill');\n`);
     const failing = run(cwd, 'affected', '--concurrency', '1');
     assert.equal(failing.status, 1);
-    assert.match(failing.stdout, /spill:x{100}/);
+    assert.equal(failing.stdout.match(/spill:(x+):spill-end/)?.[1].length, 300_000);
     assert.match(failing.stdout, /after spill/);
     assert.deepEqual(edgeTemporaryDirectories(), temporaryDirectories);
 
@@ -2586,25 +2586,26 @@ test('affected-first JSON reports both partitions and the completed inventory', 
   }
 });
 
-test('runtime dependency capture batches writes without losing module-dense edges', () => {
+test('runtime dependency capture preserves ordered edges across batch boundaries', () => {
   const cwd = makeRepository();
   const writeCount = join(tmpdir(), `affected-edge-writes-${process.pid}-${Date.now()}.txt`);
-  const moduleCount = 128;
+  const moduleCount = 800;
+  const moduleName = (index: number) => `module-${index}-${'x'.repeat(90)}.mjs`;
   try {
     mkdirSync(join(cwd, 'src', 'dense'));
     for (let index = 0; index < moduleCount; index += 1) {
-      writeFileSync(join(cwd, 'src', 'dense', `module-${index}.mjs`), `export const value = ${index};\n`);
+      writeFileSync(join(cwd, 'src', 'dense', moduleName(index)), `export const value = ${index};\n`);
     }
     writeFileSync(join(cwd, 'test', 'count-edge-writes.mjs'), [
       "import fs, { writeFileSync } from 'node:fs';",
       "import { syncBuiltinESMExports } from 'node:module';",
       'const originalAppend = fs.appendFileSync;',
-      'let edgeWrites = 0;',
-      "writeFileSync(process.env.EDGE_WRITE_COUNT, '0');",
+      'const batchBytes = [];',
+      "writeFileSync(process.env.EDGE_WRITE_COUNT, '[]');",
       'fs.appendFileSync = (path, ...args) => {',
       "  if (String(path).endsWith('edges.jsonl')) {",
-      '    edgeWrites += 1;',
-      '    writeFileSync(process.env.EDGE_WRITE_COUNT, String(edgeWrites));',
+      '    batchBytes.push(Buffer.byteLength(args[0]));',
+      '    writeFileSync(process.env.EDGE_WRITE_COUNT, JSON.stringify(batchBytes));',
       '  }',
       '  return originalAppend(path, ...args);',
       '};',
@@ -2617,7 +2618,7 @@ test('runtime dependency capture batches writes without losing module-dense edge
       `test('loads ${moduleCount} computed modules', async () => {`,
       '  let total = 0;',
       `  for (let index = 0; index < ${moduleCount}; index += 1) {`,
-      '    const loaded = await import(`../src/dense/module-${index}.mjs`);',
+      "    const loaded = await import(`../src/dense/module-${index}-${'x'.repeat(90)}.mjs`);",
       '    total += loaded.value;',
       '  }',
       `  assert.equal(total, ${(moduleCount - 1) * moduleCount / 2});`,
@@ -2634,15 +2635,16 @@ test('runtime dependency capture batches writes without losing module-dense edge
 
     const baseline = runWithEnv(cwd, { EDGE_WRITE_COUNT: writeCount }, 'baseline');
     assert.equal(baseline.status, 0, baseline.stderr);
-    assert.equal(Number(readFileSync(writeCount, 'utf8')), 1,
-      `expected one edge-log write, received ${readFileSync(writeCount, 'utf8')}`);
+    const batchBytes: number[] = JSON.parse(readFileSync(writeCount, 'utf8'));
+    assert.ok(batchBytes.length >= 2 && batchBytes.length <= 4, `expected multiple bounded writes: ${batchBytes}`);
+    assert.ok(batchBytes.every((bytes) => bytes > 0 && bytes <= 64 * 1024), `oversized write: ${batchBytes}`);
     const graph = JSON.parse(readFileSync(join(cwd, '.affected-tests', 'graph.json'), 'utf8')).graph;
-    const dependencies = new Set(graph['test/dense.test.mjs'].map((edge: [string, string]) => edge[1]));
-    for (let index = 0; index < moduleCount; index += 1) {
-      assert.ok(dependencies.has(`src/dense/module-${index}.mjs`));
-    }
+    const directEdges = graph['test/dense.test.mjs']
+      .filter((edge: [string, string]) => edge[0] === 'test/dense.test.mjs' && edge[1].startsWith('src/dense/module-'))
+      .map((edge: [string, string]) => edge[1]);
+    assert.deepEqual(directEdges, Array.from({ length: moduleCount }, (_, index) => `src/dense/${moduleName(index)}`));
 
-    writeFileSync(join(cwd, 'src', 'dense', 'module-0.mjs'), 'export const value = 0; // changed\n');
+    writeFileSync(join(cwd, 'src', 'dense', moduleName(0)), 'export const value = 0; // changed\n');
     const affected = runWithEnv(cwd, { EDGE_WRITE_COUNT: writeCount }, 'affected', 'HEAD');
     assert.equal(affected.status, 0, affected.stderr);
     assert.match(affected.stdout, /Selected 1\/1 test file\(s\)/);
