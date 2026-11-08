@@ -47,6 +47,20 @@ export type DependencyRunOutcome =
 
 const recordVersion = 11;
 
+function isFileState(value: unknown): value is FileState {
+  if (value === null) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const state = value as Record<string, unknown>;
+  return Object.keys(state).length === 2 &&
+    typeof state.mtimeMs === 'number' && Number.isFinite(state.mtimeMs) &&
+    typeof state.size === 'number' && Number.isFinite(state.size) && state.size >= 0;
+}
+
+function isDependencyState(value: unknown): value is DependencyState {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value) &&
+    Object.entries(value).every(([path, state]) => isRepositoryPath(path) && isFileState(state)));
+}
+
 function isValidRecord(value: unknown): value is DependencyRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
@@ -74,8 +88,7 @@ function isValidRecord(value: unknown): value is DependencyRecord {
     (record.globalSetupFiles as unknown[]).every(isRepositoryPath) &&
     (record.environmentFiles as unknown[]).every(isRepositoryPath) &&
     (record.conventionDependencyFiles as unknown[]).every(isRepositoryPath) &&
-    Object.entries(record.dependencyStates).every(([test, state]) => testSet.has(test) && state &&
-      typeof state === 'object' && !Array.isArray(state) && Object.keys(state).every(isRepositoryPath)) &&
+    Object.entries(record.dependencyStates).every(([test, state]) => testSet.has(test) && isDependencyState(state)) &&
     Object.values(record.durations).every((duration) => typeof duration === 'number' && Number.isFinite(duration) && duration >= 0) &&
     Object.keys(record.durations).every((test) => testSet.has(test)) &&
     Object.keys(record.graph).every((test) => testSet.has(test)) &&

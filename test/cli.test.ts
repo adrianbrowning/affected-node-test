@@ -1673,13 +1673,83 @@ test('watch reruns only tests related to a changed dependency', { timeout: 45_00
       output.includes('Watch changes: src/value.mjs') &&
       output.slice(rerunStart).includes('▶ test/value.test.mjs'), 20_000);
     const rerunOutput = stdout.slice(rerunStart);
-    assert.match(rerunOutput, /Selected 1\/2 test file\(s\)/);
+    assert.match(rerunOutput, /Selected 1\/2 related test file\(s\)/);
     assert.doesNotMatch(rerunOutput, /▶ test\/other\.test\.mjs/);
 
     await stopWatchProcess(child, closed, stderr);
   } finally {
     if (child.exitCode === null) terminateProcessTree(child, 'SIGKILL');
     await closed;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('watch reruns load fresh configuration, environment, and global setup modules', { timeout: 45_000 }, async () => {
+  const cwd = makeRepository();
+  const tracker = join(tmpdir(), `affected-watch-fresh-${process.pid}-${Date.now()}.log`);
+  writeFileSync(join(cwd, '.env.watch'), 'WATCH_VALUE=one\n');
+  writeFileSync(join(cwd, 'test', 'global-setup.mjs'), [
+    "import { appendFileSync } from 'node:fs';",
+    "export function setup() { appendFileSync(process.env.WATCH_FRESH_TRACKER, 'setup:v1\\n'); }",
+    '',
+  ].join('\n'));
+  writeFileSync(join(cwd, 'test', 'value.test.mjs'), [
+    "import { appendFileSync } from 'node:fs';",
+    "import test from 'node:test';",
+    "appendFileSync(process.env.WATCH_FRESH_TRACKER, `value:${process.env.WATCH_VALUE}\\n`);",
+    "test('value', () => {});",
+    '',
+  ].join('\n'));
+  writeFileSync(join(cwd, 'test', 'other.test.mjs'), [
+    "import { appendFileSync } from 'node:fs';",
+    "import test from 'node:test';",
+    "appendFileSync(process.env.WATCH_FRESH_TRACKER, 'other\\n');",
+    "test('other', () => {});",
+    '',
+  ].join('\n'));
+  const configuration = (include: string) => JSON.stringify({
+    envFiles: ['.env.watch'],
+    globalSetupFiles: ['test/global-setup.mjs'],
+    include: [include],
+  });
+  writeFileSync(join(cwd, 'affected-node-test.config.json'), configuration('test/value.test.mjs'));
+  const env: NodeJS.ProcessEnv = { ...process.env, WATCH_FRESH_TRACKER: tracker };
+  delete env.NODE_TEST_CONTEXT;
+  const child = spawn(process.execPath, [cli, 'watch', '--concurrency', '1'], {
+    cwd,
+    detached: process.platform !== 'win32',
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => { output += chunk; });
+  child.stderr.on('data', (chunk) => { output += chunk; });
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+    child.once('close', (code, signal) => resolve({ code, signal })));
+  try {
+    await waitForProcessOutput(child, () => output, (value) => value.includes('Watching for changes.'), 20_000);
+    await waitFor(() => existsSync(tracker) && readFileSync(tracker, 'utf8').includes('value:one'));
+
+    writeFileSync(join(cwd, '.env.watch'), 'WATCH_VALUE=two\n');
+    await waitFor(() => readFileSync(tracker, 'utf8').includes('value:two'));
+
+    writeFileSync(join(cwd, 'test', 'global-setup.mjs'), [
+      "import { appendFileSync } from 'node:fs';",
+      "export function setup() { appendFileSync(process.env.WATCH_FRESH_TRACKER, 'setup:v2\\n'); }",
+      '',
+    ].join('\n'));
+    await waitFor(() => readFileSync(tracker, 'utf8').includes('setup:v2'));
+
+    writeFileSync(join(cwd, 'affected-node-test.config.json'), configuration('test/other.test.mjs'));
+    await waitFor(() => readFileSync(tracker, 'utf8').includes('other'));
+    await waitForProcessOutput(child, () => output, (value) => value.includes('✔ other'), 20_000);
+    await stopWatchProcess(child, closed, output);
+  } finally {
+    if (child.exitCode === null) terminateProcessTree(child, 'SIGKILL');
+    await closed;
+    rmSync(tracker, { force: true });
     rmSync(cwd, { recursive: true, force: true });
   }
 });

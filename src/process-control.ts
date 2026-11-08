@@ -41,7 +41,7 @@ export function terminateProcessTree(child: ChildProcess, signal: NodeJS.Signals
       stdio: 'ignore',
       windowsHide: true,
     });
-    if (result.error && child.exitCode === null) child.kill(signal);
+    if ((result.error || result.status !== 0 || result.signal) && child.exitCode === null) child.kill(signal);
     return;
   }
   for (const pid of descendantPids(child.pid).reverse()) kill(pid, signal);

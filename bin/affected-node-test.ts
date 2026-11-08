@@ -18,7 +18,6 @@ import type {
   DependencyRecord,
   DependencyRunResult,
   DependencyState,
-  FileState,
   RecordMetadata,
 } from '../src/dependency-record.ts';
 import { dependenciesForTest } from '../src/dependency-graph.ts';
@@ -33,7 +32,7 @@ import {
   selectTestsForFiles,
   selectTestsSinceLastRun,
 } from '../src/selection-run.ts';
-import type { BaselineOutcome, SelectedOutcome, SelectionOutcome } from '../src/selection-run.ts';
+import type { BaselineOutcome, SelectionOutcome } from '../src/selection-run.ts';
 import type { PreparedSelection } from '../src/selection-run.ts';
 import { renderSelectionPreview } from '../src/selection-preview.ts';
 import {
@@ -321,7 +320,7 @@ function parseEdge(line: string): DependencyEdge {
 function graphForTest(test: string) {
   const folder = mkdtempSync(join(tmpdir(), 'affected-test-'));
   const log = join(folder, 'edges.jsonl');
-  return new Promise<GraphTestResult>((resolveResult) => {
+  return new Promise<GraphTestResult>((resolveResult, rejectResult) => {
     const startedAt = performance.now();
     const imports = [hook, ...[...setupFiles].map((file) => join(root, file))]
       .flatMap((file) => ['--import', pathToFileURL(file).href]);
@@ -359,11 +358,11 @@ function graphForTest(test: string) {
           unresolvedStatic: staticGraph.unresolved,
           cleanup: () => rmSync(folder, { recursive: true, force: true }),
         });
-      } catch (error) {
+      } catch (error: unknown) {
         stdout.cleanup();
         stderr.cleanup();
         rmSync(folder, { recursive: true, force: true });
-        throw error;
+        rejectResult(error);
       }
     });
   });
@@ -924,7 +923,33 @@ async function affectedFirst(ref?: string) {
   printPartitionDocument({ completedTests: combined.completedTests, partition, phase: 'all' });
 }
 async function watchMode() {
-  await baseline();
+  const runFreshCommand = (childCommand: 'baseline' | 'related', childArgs: string[]) =>
+    new Promise<number>((resolveStatus, rejectStatus) => {
+      const child = spawn(process.execPath, [
+        fileURLToPath(import.meta.url),
+        childCommand,
+        ...childArgs,
+        '--concurrency',
+        String(options.concurrency),
+      ], {
+        cwd: root,
+        detached: process.platform !== 'win32',
+        env: process.env,
+        stdio: 'inherit',
+      });
+      activeChildren.add(child);
+      child.once('error', (error) => {
+        activeChildren.delete(child);
+        rejectStatus(error);
+      });
+      child.once('close', (code) => {
+        activeChildren.delete(child);
+        resolveStatus(code ?? 1);
+      });
+    });
+
+  const baselineStatus = await runFreshCommand('baseline', []);
+  if (baselineStatus !== 0) process.exitCode = 1;
   if (interruptedSignal) return;
 
   const ignoredDirectories = new Set<string>(['.git', 'node_modules', 'coverage', 'dist', 'build']);
@@ -942,12 +967,11 @@ async function watchMode() {
     const files = [...pending].sort();
     pending.clear();
     try {
-      const tests = discover();
       console.log(`Watch changes: ${files.join(', ')}`);
-      await executeSelectionOutcome(tests, (saved) => ({
-        emptyMessage: 'No related tests found.',
-        selection: selectTestsForFiles({ config: projectConfig, files, record: saved, tests }),
-      }));
+      const status = await runFreshCommand('related', files);
+      if (status !== 0 && !interruptedSignal && !stopped) {
+        throw new Error(`Watch rerun exited with status ${status}.`);
+      }
     } catch (error: unknown) {
       console.error(`Watch rerun failed: ${error instanceof Error ? error.stack : error}`);
       process.exitCode = 1;

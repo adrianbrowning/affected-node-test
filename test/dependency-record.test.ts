@@ -71,6 +71,17 @@ test('dependency record module owns persistence and compatibility decisions', ()
 
     writeFileSync(path, JSON.stringify({
       ...record,
+      dependencyStates: {
+        'test/a.test.mjs': { 'src/a.mjs': { mtimeMs: 'not-a-number', size: 2 } },
+      },
+      version: 11,
+    }));
+    assert.deepEqual(loadDependencyRecord(path, current), {
+      reason: 'Invalid graph cache; running full suite.',
+    });
+
+    writeFileSync(path, JSON.stringify({
+      ...record,
       graph: { 'test/a.test.mjs': [['test/a.test.mjs', '../../outside.mjs']] },
       version: 11,
     }));

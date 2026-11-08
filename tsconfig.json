@@ -3,6 +3,8 @@
     "erasableSyntaxOnly": true,
     "module": "nodenext",
     "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "rewriteRelativeImportExtensions": true,
     "skipLibCheck": true,
     "strict": true,
@@ -10,5 +12,5 @@
     "types": ["node"],
     "verbatimModuleSyntax": true
   },
-  "include": ["bin/**/*.ts", "src/**/*.ts", "test/**/*.ts"]
+  "include": ["bin/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "test/**/*.ts"]
 }
