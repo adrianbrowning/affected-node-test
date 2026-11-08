@@ -58,6 +58,7 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "mdcode-ts": "0.1.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "yaml": "2.9.1"
   }
 }

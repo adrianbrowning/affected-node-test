@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import * as YAML from 'yaml';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
@@ -109,6 +110,13 @@ test('the packed artifact installs offline and runs the documented release smoke
     const run = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], { cwd: fixture, encoding: 'utf8' });
     assert.equal(run('--help').status, 0);
     assert.equal(run('doctor').status, 0);
+    const initialized = run('init', '--write');
+    assert.equal(initialized.status, 0, initialized.stderr);
+    const initializedConfig = JSON.parse(readFileSync(join(fixture, 'affected-node-test.config.json'), 'utf8'));
+    assert.equal(initializedConfig.$schema,
+      './node_modules/@gcmdev/affected-node-test/schema/affected-node-test.schema.json');
+    assert.equal(JSON.parse(readFileSync(join(fixture, initializedConfig.$schema), 'utf8')).title,
+      'affected-node-test configuration');
 
     for (const args of [
       ['init', '-q'],
@@ -132,6 +140,30 @@ test('the packed artifact installs offline and runs the documented release smoke
 
 test('the release workflow and policy require a versioned provenance publish', () => {
   const workflow = readFileSync(join(root, '.github', 'workflows', 'release.yml'), 'utf8');
+  const parsedWorkflow = YAML.parse(workflow);
+  assert.deepEqual(parsedWorkflow.on.release.types, ['published']);
+  assert.equal(parsedWorkflow.permissions['id-token'], 'write');
+  assert.ok(Array.isArray(parsedWorkflow.jobs.publish.steps));
+  assert.equal(parsedWorkflow.jobs.publish['timeout-minutes'], 20);
+  assert.ok(parsedWorkflow.jobs.publish.steps.some((step: unknown) =>
+    typeof step === 'object' && step !== null && 'run' in step &&
+    typeof step.run === 'string' && step.run.includes('merge-base --is-ancestor')));
+  for (const step of parsedWorkflow.jobs.publish.steps) {
+    if (typeof step === 'object' && step !== null && 'uses' in step) {
+      assert.match(String(step.uses), /@[0-9a-f]{40}$/);
+    }
+  }
+
+  const ciWorkflow = YAML.parse(readFileSync(join(root, '.github', 'workflows', 'ci.yml'), 'utf8'));
+  for (const job of Object.values(ciWorkflow.jobs) as Array<Record<string, unknown>>) {
+    assert.equal(job['timeout-minutes'], 20);
+    if (!Array.isArray(job.steps)) continue;
+    for (const step of job.steps) {
+      if (typeof step === 'object' && step !== null && 'uses' in step) {
+        assert.match(String(step.uses), /@[0-9a-f]{40}$/);
+      }
+    }
+  }
   assert.match(workflow, /release:\s*\n\s*types: \[published\]/);
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /npm publish --provenance --access public/);

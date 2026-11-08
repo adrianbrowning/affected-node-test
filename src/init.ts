@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { writeJsonAtomically } from './cache.ts';
 
 const config = {
-  $schema: './node_modules/affected-node-test/schema/affected-node-test.schema.json',
+  $schema: './node_modules/@gcmdev/affected-node-test/schema/affected-node-test.schema.json',
 };
 const scripts = {
   'test:affected': 'affected-node-test affected',

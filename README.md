@@ -34,7 +34,7 @@ No configuration is needed for conventional JavaScript or TypeScript `.test` and
 
 ```json file=docs/examples/minimal-config.json
 {
-  "$schema": "./node_modules/affected-node-test/schema/affected-node-test.schema.json",
+  "$schema": "./node_modules/@gcmdev/affected-node-test/schema/affected-node-test.schema.json",
   "include": ["test/**/*.test.mjs"]
 }
 ```
@@ -168,7 +168,7 @@ An optional `affected-node-test.config.json` at the repository root controls cac
 
 ```json file=docs/examples/affected-node-test.config.json
 {
-  "$schema": "./node_modules/affected-node-test/schema/affected-node-test.schema.json",
+  "$schema": "./node_modules/@gcmdev/affected-node-test/schema/affected-node-test.schema.json",
   "cacheDir": ".cache/affected-node-test",
   "include": ["test/**/*.test.mjs"],
   "exclude": ["test/fixtures/**"],
@@ -218,7 +218,7 @@ A workspace root can delegate to isolated project roots instead of defining sing
 
 ```json file=docs/examples/workspace-config.json
 {
-  "$schema": "./node_modules/affected-node-test/schema/affected-node-test.schema.json",
+  "$schema": "./node_modules/@gcmdev/affected-node-test/schema/affected-node-test.schema.json",
   "projects": ["packages/api", "packages/web"]
 }
 ```

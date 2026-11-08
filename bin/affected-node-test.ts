@@ -142,7 +142,7 @@ function parseArguments(values: string[]) {
       }
       output = 'json';
     } else if (values[index] === '--project') {
-      if (!['baseline', 'affected', 'related', 'since-last-run', 'last-failed', 'watch', 'clear-cache'].includes(command)) {
+      if (!['baseline', 'affected', 'affected-first', 'related', 'since-last-run', 'last-failed', 'watch', 'clear-cache'].includes(command)) {
         failUsage(`Unknown option: ${values[index]}`, commandHelp(command));
       }
       const value = values[index + 1];

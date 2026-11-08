@@ -363,7 +363,7 @@ test('init previews, writes, repeats idempotently, and preserves conflicts', () 
     assert.match(write.stdout, /Updated package\.json: added script test:affected/);
     assert.match(write.stdout, /Updated package\.json: added script test:baseline/);
     assert.deepEqual(JSON.parse(readFileSync(join(cwd, 'affected-node-test.config.json'), 'utf8')), {
-      $schema: './node_modules/affected-node-test/schema/affected-node-test.schema.json',
+      $schema: './node_modules/@gcmdev/affected-node-test/schema/affected-node-test.schema.json',
     });
     assert.match(readFileSync(join(cwd, '.gitignore'), 'utf8'), /^\.affected-tests\/$/m);
     const writtenPackage = JSON.parse(readFileSync(packagePath, 'utf8'));
@@ -446,7 +446,7 @@ test('doctor validates single projects without running tests or mutating cache',
     '',
   ].join('\n'));
   writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({
-    $schema: './node_modules/affected-node-test/schema/affected-node-test.schema.json',
+    $schema: './node_modules/@gcmdev/affected-node-test/schema/affected-node-test.schema.json',
     envFiles: ['.env.test'],
     projectDependencies: ['package.json'],
     setupFiles: ['test/setup.mjs'],
@@ -1023,6 +1023,14 @@ test('workspace affected-first completes affected projects before remaining proj
     assert.deepEqual(readFileSync(tracker, 'utf8').trim().split('\n'), ['a', 'b']);
     assert.match(result.stdout, /Project packages\/a — affected/);
     assert.match(result.stdout, /Project packages\/b — remaining/);
+
+    writeFileSync(tracker, '');
+    const filtered = runWithEnv(cwd, { PARTITION_TRACKER: tracker },
+      'affected-first', 'HEAD', '--project', 'packages/a');
+    assert.equal(filtered.status, 0, filtered.stderr);
+    assert.deepEqual(readFileSync(tracker, 'utf8').trim().split('\n'), ['a']);
+    assert.match(filtered.stdout, /Project packages\/a — affected/);
+    assert.doesNotMatch(filtered.stdout, /Project packages\/b/);
   } finally {
     rmSync(tracker, { force: true });
     rmSync(cwd, { recursive: true, force: true });
@@ -1049,16 +1057,16 @@ test('workspace affected-first phases resume from one portable plan', () => {
     writeFileSync(join(cwd, 'packages', 'a', 'src', 'value.mjs'), 'export const value = 1; // split\n');
 
     const first = runWithEnv(cwd, { PARTITION_TRACKER: tracker },
-      'affected-first', 'HEAD', '--phase', 'affected', '--plan', plan);
+      'affected-first', 'HEAD', '--project', 'packages/a', '--phase', 'affected', '--plan', plan);
     assert.equal(first.status, 0, first.stderr);
     assert.deepEqual(readFileSync(tracker, 'utf8').trim().split('\n'), ['a']);
     const serialized = readFileSync(join(cwd, plan), 'utf8');
     assert.doesNotMatch(serialized, new RegExp(cwd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 
     const second = runWithEnv(cwd, { PARTITION_TRACKER: tracker },
-      'affected-first', '--phase', 'remaining', '--plan', plan);
+      'affected-first', '--project', 'packages/a', '--phase', 'remaining', '--plan', plan);
     assert.equal(second.status, 0, second.stderr);
-    assert.deepEqual(readFileSync(tracker, 'utf8').trim().split('\n'), ['a', 'b']);
+    assert.deepEqual(readFileSync(tracker, 'utf8').trim().split('\n'), ['a']);
   } finally {
     rmSync(tracker, { force: true });
     rmSync(cwd, { recursive: true, force: true });

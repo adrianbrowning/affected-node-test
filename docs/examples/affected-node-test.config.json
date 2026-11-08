@@ -1,5 +1,5 @@
 {
-  "$schema": "./node_modules/affected-node-test/schema/affected-node-test.schema.json",
+  "$schema": "./node_modules/@gcmdev/affected-node-test/schema/affected-node-test.schema.json",
   "cacheDir": ".cache/affected-node-test",
   "include": ["test/**/*.test.mjs"],
   "exclude": ["test/fixtures/**"],
