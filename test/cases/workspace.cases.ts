@@ -104,6 +104,11 @@ test('workspace project filters scope finite and watch commands', { timeout: 60_
     assert.equal(multiple.status, 0, multiple.stderr);
     assert.deepEqual(JSON.parse(multiple.stdout).projects.map(({ path }: { path: string }) => path), ['packages/a', 'packages/b']);
 
+    const cleared = run(cwd, 'clear-cache', '--project', 'packages/a');
+    assert.equal(cleared.status, 0, cleared.stderr);
+    assert.equal(existsSync(join(cwd, 'packages', 'a', '.affected-tests', 'graph.json')), false);
+    assert.equal(existsSync(join(cwd, 'packages', 'b', '.affected-tests', 'graph.json')), true);
+
     const missing = run(cwd, 'baseline', '--project', 'packages/missing');
     assert.equal(missing.status, 1);
     assert.match(missing.stderr, /No workspace projects matched --project packages\/missing\./);

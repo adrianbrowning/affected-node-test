@@ -1,6 +1,6 @@
 import { rmSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import type { CommandName } from './cli-help.ts';
+import type { CommandName } from './command-catalog.ts';
 import { configurationFingerprint } from './config.ts';
 import { dependenciesForTest } from './dependency-graph.ts';
 import { applyDependencyRun, loadDependencyRecord } from './dependency-record.ts';

@@ -4,8 +4,8 @@ import { resolve, relative, join, sep, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAffectedFirstRunner } from './affected-first-run.ts';
 import { isContainedPath } from './contained-path.ts';
-import { commandHelp, isCommandName, topLevelHelp } from './cli-help.ts';
-import type { CommandName } from './cli-help.ts';
+import { commandHelp, isCommandName, topLevelHelp } from './command-catalog.ts';
+import type { CommandName } from './command-catalog.ts';
 import { parseCliOptions } from './cli-command.ts';
 import { createSelectionExecution } from './selection-execution.ts';
 import { diagnose } from './doctor.ts';
@@ -61,21 +61,6 @@ export async function runCli(cliPath: string) {
     console.log(commandHelp(command));
     process.exit(0);
   }
-  if (command === 'init') {
-    const invalid = args.find((argument) => argument !== '--write');
-    if (invalid) failUsage(`Unknown option: ${invalid}`, commandHelp(command));
-    if (args.filter((argument) => argument === '--write').length > 1) {
-      failUsage('--write may only be specified once.', commandHelp(command));
-    }
-    try {
-      const result = initializeProject(root, { write: args.includes('--write') });
-      for (const line of result.output) console.log(line);
-      for (const conflict of result.conflicts) console.error(conflict);
-      process.exit(result.conflicts.length ? 1 : 0);
-    } catch (error: unknown) {
-      fail(errorMessage(error));
-    }
-  }
   const options = (() => {
     try {
       return parseCliOptions(command, args);
@@ -83,6 +68,16 @@ export async function runCli(cliPath: string) {
       return failUsage(errorMessage(error), commandHelp(command));
     }
   })();
+  if (command === 'init') {
+    try {
+      const result = initializeProject(root, { write: options.write });
+      for (const line of result.output) console.log(line);
+      for (const conflict of result.conflicts) console.error(conflict);
+      process.exit(result.conflicts.length ? 1 : 0);
+    } catch (error: unknown) {
+      fail(errorMessage(error));
+    }
+  }
   const activeChildren = new Set<ChildProcess>();
   const signalExitCodes = { SIGINT: 130, SIGTERM: 143 } as const;
   type InterruptSignal = keyof typeof signalExitCodes;

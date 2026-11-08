@@ -122,6 +122,27 @@ test('help, version, and invalid input are useful before project configuration l
   }
 });
 
+test('non-running commands reject concurrency while help reflects accepted options', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'affected-tests-command-options-'));
+  writeFileSync(join(cwd, 'affected-node-test.config.json'), '{ invalid json\n');
+  try {
+    for (const command of ['doctor', 'clear-cache', 'init']) {
+      const invalid = run(cwd, command, '--concurrency', '1');
+      assert.equal(invalid.status, 1, `${command}: ${invalid.stderr}`);
+      assert.match(invalid.stderr, /Unknown option: --concurrency/);
+      const help = run(cwd, command, '--help');
+      assert.equal(help.status, 0, help.stderr);
+      assert.doesNotMatch(help.stdout, /--concurrency/);
+    }
+    const clearCacheHelp = run(cwd, 'clear-cache', '--help');
+    assert.match(clearCacheHelp.stdout, /--project GLOB/);
+    const initHelp = run(cwd, 'init', '--help');
+    assert.match(initHelp.stdout, /--write/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('doctor validates single projects without running tests or mutating cache', () => {
   const cwd = makeNonGitRepository();
   const workerMarker = join(cwd, 'worker-ran');
