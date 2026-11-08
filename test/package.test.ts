@@ -105,8 +105,8 @@ test('the packed artifact installs offline and runs the documented release smoke
     const installedRoot = join(fixture, 'node_modules', '@gcmdev', 'affected-node-test');
     assert.ok(readFileSync(join(installedRoot, 'LICENSE'), 'utf8').includes('MIT License'));
     assert.match(readFileSync(join(installedRoot, 'CHANGELOG.md'), 'utf8'), /0\.1\.0/);
-    const cli = join(fixture, 'node_modules', '.bin', 'affected-node-test');
-    const run = (...args: string[]) => spawnSync(cli, args, { cwd: fixture, encoding: 'utf8' });
+    const cli = join(installedRoot, 'dist', 'bin', 'affected-node-test.js');
+    const run = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], { cwd: fixture, encoding: 'utf8' });
     assert.equal(run('--help').status, 0);
     assert.equal(run('doctor').status, 0);
 
