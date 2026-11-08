@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  executeSelectionRun,
   selectLastFailed,
   selectTestsForFiles,
   selectTestsSinceLastRun,
@@ -215,63 +214,4 @@ test('last-failed selection returns only sticky failures with structured reasons
     },
     tests: ['test/b.test.mjs'],
   });
-});
-
-test('selection run owns cache fallback and targeted safety sequencing', async () => {
-  const events: string[] = [];
-  const record = { graph: {} };
-  const runtime = {
-    baseline: async () => events.push('baseline'),
-    execute: async (selectedTests: string[], loadedRecord: { graph: Record<string, never> }) => {
-      assert.equal(loadedRecord, record);
-      events.push(`execute:${selectedTests.join(',')}`);
-    },
-    log: (message: string) => events.push(`log:${message}`),
-    totalTests: 2,
-  };
-
-  await executeSelectionRun({
-    ...runtime,
-    loadRecord: () => undefined,
-    prepare: () => {
-      events.push('prepare');
-      return { selection: { kind: 'selected', messages: [], reasons: {}, tests: [] } };
-    },
-  });
-  assert.deepEqual(events, ['baseline']);
-
-  events.length = 0;
-  await executeSelectionRun({
-    ...runtime,
-    loadRecord: () => record,
-    prepare: (loadedRecord) => {
-      assert.equal(loadedRecord, record);
-      return {
-        emptyMessage: 'No affected tests found.',
-        selectedLabel: 'related test file(s)',
-        selection: {
-          kind: 'selected',
-          messages: ['Mapped fixture change.'],
-          reasons: {},
-          tests: ['test/a.test.mjs'],
-        },
-      };
-    },
-  });
-  assert.deepEqual(events, [
-    'log:Mapped fixture change.',
-    'log:Selected 1/2 related test file(s)',
-    'execute:test/a.test.mjs',
-  ]);
-
-  events.length = 0;
-  await executeSelectionRun({
-    ...runtime,
-    loadRecord: () => record,
-    prepare: () => ({
-      emptyMessage: 'No affected tests found.',
-      selection: { kind: 'selected', messages: [], reasons: {}, tests: [] },
-    }),
-  });
-  assert.deepEqual(events, ['log:No affected tests found.']);
 });

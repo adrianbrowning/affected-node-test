@@ -28,9 +28,7 @@ export type BaselineOutcome = {
   reason?: FallbackReason;
 };
 export type SelectionOutcome = BaselineOutcome | SelectedOutcome;
-type SelectionDetails = { selectedLabel: string };
 export type PreparedSelection = {
-  announceSelected?: boolean;
   contextMessages?: string[];
   emptyMessage?: string;
   selectedLabel?: string;
@@ -48,72 +46,6 @@ function reasonCollector() {
       return Object.fromEntries([...tests].sort().map((test) => [test, collected.get(test) ?? []]));
     },
   };
-}
-
-export async function executeSelectionRun<RecordType>({
-  baseline,
-  empty,
-  execute,
-  loadRecord,
-  log,
-  prepare,
-  totalTests,
-}: {
-  baseline: (record?: RecordType, selection?: BaselineOutcome) => Promise<unknown>;
-  empty?: (record: RecordType, selection: SelectedOutcome, details: SelectionDetails) => Promise<unknown> | unknown;
-  execute: (tests: string[], record: RecordType, selection: SelectedOutcome, details: SelectionDetails) => Promise<unknown>;
-  loadRecord: () => RecordType | undefined;
-  log: (message: string) => unknown;
-  prepare: (record: RecordType) => PreparedSelection;
-  totalTests: number;
-}) {
-  const record = loadRecord();
-  if (!record) {
-    await baseline();
-    return;
-  }
-  await executeSelection({
-    ...prepare(record),
-    baseline: (selection) => baseline(record, selection),
-    empty: (selection, details) => empty?.(record, selection, details),
-    execute: (selectedTests, selection, details) => execute(selectedTests, record, selection, details),
-    log,
-    totalTests,
-  });
-}
-
-async function executeSelection({
-  baseline,
-  announceSelected = true,
-  contextMessages = [],
-  empty,
-  emptyMessage = 'No tests selected.',
-  execute,
-  log,
-  selection,
-  selectedLabel = 'test file(s)',
-  totalTests,
-}: PreparedSelection & {
-  baseline: (selection: BaselineOutcome) => Promise<unknown>;
-  empty?: (selection: SelectedOutcome, details: SelectionDetails) => Promise<unknown> | unknown;
-  execute: (tests: string[], selection: SelectedOutcome, details: SelectionDetails) => Promise<unknown>;
-  log: (message: string) => unknown;
-  totalTests: number;
-}) {
-  if (selection.kind === 'baseline') {
-    log(selection.message);
-    await baseline(selection);
-    return;
-  }
-  for (const message of selection.messages) log(message);
-  for (const message of contextMessages) log(message);
-  if (!selection.tests.length) {
-    log(emptyMessage);
-    await empty?.(selection, { selectedLabel });
-    return;
-  }
-  if (announceSelected) log(`Selected ${selection.tests.length}/${totalTests} ${selectedLabel}`);
-  await execute(selection.tests, selection, { selectedLabel });
 }
 
 export function selectTestsSinceLastRun({ dependencyStateChanged, record, tests }: {
