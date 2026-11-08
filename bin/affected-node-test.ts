@@ -50,6 +50,7 @@ import {
   conventionDependencyPatterns,
   loadProjectConfig,
   matchingRepositoryFiles,
+  repositoryFileInventory,
   repositoryFilesFingerprint,
 } from '../src/project-config.ts';
 import type { ProjectConfig } from '../src/project-config.ts';
@@ -254,13 +255,14 @@ if (isAbsolute(projectConfig.cacheDir) || !isContainedPath(root, cacheDirectory)
 const cachePath = join(cacheDirectory, 'graph.json');
 const cacheDirectoryRepositoryPath = normal(cacheDirectoryFromRoot);
 const cacheRepositoryPath = normal(relative(root, cachePath));
+const repositoryInventory = repositoryFileInventory(root).filter((path) => !isCacheRepositoryPath(path));
 function isCacheRepositoryPath(path: string) {
   return path === cacheRepositoryPath || (
     Boolean(cacheDirectoryRepositoryPath) && path.startsWith(`${cacheDirectoryRepositoryPath}/`)
   );
 }
 function matchingProjectFiles(patterns: string[]) {
-  return matchingRepositoryFiles(root, patterns).filter((path) => !isCacheRepositoryPath(path));
+  return matchingRepositoryFiles(root, patterns, repositoryInventory);
 }
 function configuredProjectDependencyFingerprint() {
   return repositoryFilesFingerprint(root, matchingProjectFiles(projectConfig.projectDependencies));
@@ -300,7 +302,7 @@ if (globalSetupFiles.size) {
 }
 
 function discover() {
-  return discoverTestFiles(root, projectConfig);
+  return discoverTestFiles(root, projectConfig, repositoryInventory);
 }
 type OutputBuffer = ReturnType<typeof createOutputBuffer>;
 type GraphTestResult = {

@@ -891,6 +891,37 @@ test('a configured cache directory cannot escape the project root', () => {
   }
 });
 
+test('configured patterns reuse one repository walk for a command', () => {
+  const cwd = makeRepository();
+  const count = join(cwd, 'walk-count.txt');
+  try {
+    const preload = join(cwd, 'count-walks.mjs');
+    writeFileSync(preload, [
+      "import fs, { writeFileSync } from 'node:fs';",
+      "import { syncBuiltinESMExports } from 'node:module';",
+      "const original = fs.readdirSync;",
+      "let rootWalks = 0;",
+      `fs.readdirSync = (path, ...args) => { if (String(path) === ${JSON.stringify(cwd)} && String(process.argv[1]).includes('affected-node-test')) rootWalks += 1; return original(path, ...args); };`,
+      'syncBuiltinESMExports();',
+      `process.on('exit', () => { if (String(process.argv[1]).includes('affected-node-test')) writeFileSync(${JSON.stringify(count)}, String(rootWalks)); });`,
+      '',
+    ].join('\n'));
+    writeFileSync(join(cwd, '.env'), 'WALK_COUNT_TEST=1\n');
+    writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({
+      envFiles: ['.env'],
+      globalSetupFiles: [],
+      projectDependencies: ['src/*.mjs', 'package.json'],
+      setupFiles: ['count-walks.mjs'],
+    }));
+    const result = runWithEnv(cwd, { NODE_OPTIONS: `--import=${preload}` }, 'baseline');
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(Number(readFileSync(count, 'utf8')) <= 2,
+      `expected one repository walk, received ${readFileSync(count, 'utf8')}`);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('symlinked cache and plan paths cannot escape the project root', {
   skip: process.platform === 'win32' ? 'Symlink creation requires Windows developer privileges.' : false,
 }, () => {

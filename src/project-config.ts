@@ -161,24 +161,26 @@ export function matchesPatterns(path: string, patterns: string[]) {
   return patterns.some((pattern) => matchesGlob(path, pattern));
 }
 
-function matchingFiles(root: string, patterns: string[], directory = root, output: [string, string][] = []) {
+function inventoryFiles(root: string, directory = root, output: string[] = []) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory() && excludedDirectories.has(entry.name)) continue;
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) matchingFiles(root, patterns, path, output);
+    if (entry.isDirectory()) inventoryFiles(root, path, output);
     else if (entry.isFile()) {
       const repositoryPath = relative(root, path).split(sep).join('/');
-      if (matchesPatterns(repositoryPath, patterns)) output.push([repositoryPath, path]);
+      output.push(repositoryPath);
     }
   }
   return output;
 }
 
-export function matchingRepositoryFiles(root: string, patterns: string[]) {
+export function repositoryFileInventory(root: string) {
+  return inventoryFiles(root).sort((a, b) => a.localeCompare(b));
+}
+
+export function matchingRepositoryFiles(root: string, patterns: string[], inventory?: string[]) {
   if (!patterns.length) return [];
-  return matchingFiles(root, patterns)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([repositoryPath]) => repositoryPath);
+  return (inventory ?? repositoryFileInventory(root)).filter((path) => matchesPatterns(path, patterns));
 }
 
 export function projectDependencyFingerprint(root: string, patterns: string[]) {

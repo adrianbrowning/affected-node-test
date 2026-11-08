@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { configFileName, loadProjectConfig, matchingRepositoryFiles } from './project-config.ts';
+import { configFileName, loadProjectConfig, matchingRepositoryFiles, repositoryFileInventory } from './project-config.ts';
 import { discoverTestFiles } from './test-discovery.ts';
 import { resolveWorkspaceProjects } from './workspace.ts';
 import type { ProjectConfig } from './project-config.ts';
@@ -54,12 +54,13 @@ function resolveConfiguredFiles(
   config: ProjectConfig,
   cache: ReturnType<typeof cacheDetails>,
   problems: string[],
+  inventory: string[],
 ) {
   const output = {} as Record<ResolvedFileKey, string[]>;
   for (const key of resolvedFileKeys) {
     const files = new Set<string>();
     for (const pattern of config[key]) {
-      const matches = matchingRepositoryFiles(root, [pattern])
+      const matches = matchingRepositoryFiles(root, [pattern], inventory)
         .filter((path) => path !== cache.label &&
           (!cache.cacheDirectoryLabel || !path.startsWith(`${cache.cacheDirectoryLabel}/`)));
       if (!matches.length && requiredPatternKeys.has(key)) {
@@ -74,12 +75,13 @@ function resolveConfiguredFiles(
 
 function inspectProject(root: string, config: ProjectConfig) {
   const problems: string[] = [];
-  const tests = discoverTestFiles(root, config);
+  const inventory = repositoryFileInventory(root);
+  const tests = discoverTestFiles(root, config, inventory);
   if (!tests.length) {
     problems.push('No test files discovered. Add conventional .test/.spec files or configure include.');
   }
   const cache = cacheDetails(root, config, problems);
-  const configuredFiles = resolveConfiguredFiles(root, config, cache, problems);
+  const configuredFiles = resolveConfiguredFiles(root, config, cache, problems, inventory);
   const lines = [
     `Project root: ${root}`,
     `Configuration: ${existsSync(join(root, configFileName)) ? configFileName : 'defaults'}`,
