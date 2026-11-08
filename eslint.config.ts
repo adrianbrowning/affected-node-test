@@ -11,7 +11,6 @@ const config: Linter.Config[] = [
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/no-unnecessary-condition': 'off',
       '@typescript-eslint/promise-function-async': 'off',
-      'big-o/no-array-lookup-in-loop': 'off',
       'de-morgan/no-negated-disjunction': 'off',
       'no-await-in-loop': 'off',
       'no-console': 'off',
@@ -28,6 +27,7 @@ const config: Linter.Config[] = [
     rules: {
       '@typescript-eslint/no-floating-promises': 'off',
       '@typescript-eslint/no-unnecessary-type-assertion': 'off',
+      'big-o/no-array-lookup-in-loop': 'off',
       'no-useless-escape': 'off',
       'sonarjs/no-empty-test-file': 'off',
       'sonarjs/prefer-regexp-exec': 'off',

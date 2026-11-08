@@ -97,8 +97,9 @@ export function parsePartitionPlan(value: unknown): PartitionPlan {
   const tests = [...new Set(plan.tests)].sort();
   const affected = [...new Set(plan.affected)].sort();
   const remaining = [...new Set(plan.remaining)].sort();
+  const remainingTests = new Set(remaining);
   if (JSON.stringify([...affected, ...remaining].sort()) !== JSON.stringify(tests) ||
-      affected.some((test) => remaining.includes(test))) {
+      affected.some((test) => remainingTests.has(test))) {
     throw new Error('Partition plan test partitions are not a disjoint complete suite.');
   }
   if (plan.affectedResult !== undefined && !isStoredResult(plan.affectedResult)) {
