@@ -1,9 +1,13 @@
 {
-  "name": "affected-node-test",
+  "name": "@gcmdev/affected-node-test",
   "version": "0.1.0",
   "description": "Affected-test selection for Node's native test runner",
+  "author": "Adrian Browning",
+  "license": "MIT",
   "type": "module",
   "files": [
+    "CHANGELOG.md",
+    "LICENSE",
     "dist",
     "schema",
     "README.md"
@@ -16,6 +20,11 @@
     "url": "https://github.com/adrianbrowning/affected-node-test/issues"
   },
   "homepage": "https://github.com/adrianbrowning/affected-node-test#readme",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
   "keywords": [
     "affected-tests",
     "node-test",

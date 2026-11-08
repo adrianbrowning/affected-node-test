@@ -2,13 +2,15 @@
 
 An Acorn-backed affected-test selector for Node's native `node:test`, combining static import analysis with synchronous runtime `node:module` hooks.
 
+[Changelog](CHANGELOG.md) · [Release policy](https://github.com/adrianbrowning/affected-node-test/blob/main/docs/releasing.md) · [MIT license](LICENSE)
+
 ## Install
 
 `affected-node-test` requires Node 26 or newer. Install it as a development dependency with your package manager:
 
 ```sh
-pnpm add --save-dev affected-node-test
-# or: npm install --save-dev affected-node-test
+pnpm add --save-dev @gcmdev/affected-node-test
+# or: npm install --save-dev @gcmdev/affected-node-test
 ```
 
 Run commands from the project root. Git is required only for `affected`; `baseline`, `related`, `since-last-run`, and `last-failed` also work outside a Git repository.
@@ -16,7 +18,7 @@ Run commands from the project root. Git is required only for `affected`; `baseli
 ## Quick start
 
 ```sh file=docs/examples/quickstart.sh
-pnpm add --save-dev affected-node-test
+pnpm add --save-dev @gcmdev/affected-node-test
 pnpm exec affected-node-test baseline
 
 # After changing source or tests, run the affected feedback loop.
