@@ -9,7 +9,6 @@ const config: Linter.Config[] = [
     rules: {
       '@typescript-eslint/array-type': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
-      '@typescript-eslint/no-unnecessary-condition': 'off',
       '@typescript-eslint/promise-function-async': 'off',
       'de-morgan/no-negated-disjunction': 'off',
       'no-await-in-loop': 'off',

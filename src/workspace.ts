@@ -41,10 +41,13 @@ async function runProjectProcesses(jobs: ProjectInvocation[], cliPath: string) {
         });
         let stdout = '';
         let stderr = '';
+        // A failed spawn can leave piped streams absent.
+        /* eslint-disable @typescript-eslint/no-unnecessary-condition */
         child.stdout?.setEncoding('utf8');
         child.stderr?.setEncoding('utf8');
         child.stdout?.on('data', (chunk: string) => { stdout += chunk; });
         child.stderr?.on('data', (chunk: string) => { stderr += chunk; });
+        /* eslint-enable @typescript-eslint/no-unnecessary-condition */
         child.once('error', rejectResult);
         child.once('close', (status) => resolveResult({ status: status ?? 1, stdout, stderr }));
       });
@@ -274,9 +277,9 @@ async function runWorkspaceAffectedFirst({ root, projects, options, cliPath }: {
   const stored = phase === 'remaining' && workspacePlanPath
     ? readWorkspacePartitionPlan(workspacePlanPath)
     : undefined;
-  const ref = stored?.ref ?? positionals[0];
+  const ref = stored?.ref ?? positionals.at(0);
   const excludePath = workspacePlanPath ? normal(relative(root, workspacePlanPath)) : undefined;
-  const changes = workspaceAffectedChanges({ root, projects, ref: ref ?? undefined, excludePath });
+  const changes = workspaceAffectedChanges({ root, projects, ref, excludePath });
   if (stored && (stored.fallback !== changes.fallback ||
       JSON.stringify(stored.changes) !== JSON.stringify(changes.files) ||
       stored.changesFingerprint !== repositoryFilesFingerprint(root, changes.files))) {
@@ -338,7 +341,7 @@ async function runWorkspaceAffectedFirst({ root, projects, options, cliPath }: {
       if (phase === 'affected' || result.status === 0) {
         embedded.set(item.project.path, JSON.parse(readFileSync(resolve(item.project.root, item.path), 'utf8')));
       }
-      if (result.status !== 0) return result.status ?? 1;
+      if (result.status !== 0) return result.status;
     }
     return 0;
   };

@@ -49,6 +49,8 @@ export function createTestWorker({ root, hook, nodeArgs, setupFiles, globalSetup
         { cwd: root, detached: process.platform !== 'win32', stdio: ['inherit', 'pipe', 'pipe'], env: { ...process.env,
           AFFECTED_TESTS_EDGES_FILE: log, AFFECTED_TESTS_ROOT: root } });
       activeChildren.add(child);
+      // A failed spawn can leave piped streams absent.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!child.stdout || !child.stderr) throw new Error(`Failed to capture test output for ${test}.`);
       const stdout = createOutputBuffer({ directory: folder, name: 'stdout' });
       const stderr = createOutputBuffer({ directory: folder, name: 'stderr' });

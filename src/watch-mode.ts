@@ -65,6 +65,8 @@ export function createWatchMode({ root, cliPath, concurrency, activeChildren, is
       try {
         console.log(`Watch changes: ${files.join(', ')}`);
         const status = await runFreshCommand('related', files);
+        // Interrupt and stop state may change while the child command runs.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (status !== 0 && !getInterruptedSignal() && !stopped) {
           throw new Error(`Watch rerun exited with status ${status}.`);
         }
@@ -73,6 +75,8 @@ export function createWatchMode({ root, cliPath, concurrency, activeChildren, is
         process.exitCode = 1;
       } finally {
         running = false;
+        // A new event may have arrived while the previous command ran.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (pending.size && !stopped) {
           clearTimeout(debounce);
           debounce = setTimeout(() => void runChanges(), 100);
