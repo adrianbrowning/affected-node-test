@@ -8,6 +8,7 @@ import { availableParallelism, tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { writeJsonAtomically } from '../src/cache.ts';
+import { isContainedPath } from '../src/contained-path.ts';
 import { commandHelp, isCommandName, topLevelHelp } from '../src/cli-help.ts';
 import type { CommandName } from '../src/cli-help.ts';
 import { configurationFingerprint } from '../src/config.ts';
@@ -246,7 +247,7 @@ process.once('SIGINT', () => interrupt('SIGINT'));
 process.once('SIGTERM', () => interrupt('SIGTERM'));
 const cacheDirectory = resolve(root, projectConfig.cacheDir);
 const cacheDirectoryFromRoot = relative(root, cacheDirectory);
-if (isAbsolute(projectConfig.cacheDir) || cacheDirectoryFromRoot === '..' || cacheDirectoryFromRoot.startsWith(`..${sep}`)) {
+if (isAbsolute(projectConfig.cacheDir) || !isContainedPath(root, cacheDirectory)) {
   fail('affected-node-test.config.json: cacheDir must stay within the project root.');
 }
 const cachePath = join(cacheDirectory, 'graph.json');
@@ -758,8 +759,7 @@ function combineRunResults(first: DependencyRunResult, second: DependencyRunResu
 }
 function resolvePlanPath(path: string) {
   const resolved = resolve(root, path);
-  const fromRoot = relative(root, resolved);
-  if (isAbsolute(path) || fromRoot === '..' || fromRoot.startsWith(`..${sep}`)) {
+  if (isAbsolute(path) || !isContainedPath(root, resolved)) {
     fail('--plan must be a project-relative path within the project root.');
   }
   return resolved;

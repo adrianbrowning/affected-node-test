@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -891,6 +891,32 @@ test('a configured cache directory cannot escape the project root', () => {
   }
 });
 
+test('symlinked cache and plan paths cannot escape the project root', {
+  skip: process.platform === 'win32' ? 'Symlink creation requires Windows developer privileges.' : false,
+}, () => {
+  const cwd = makeRepository();
+  const outside = mkdtempSync(join(tmpdir(), 'affected-external-'));
+  try {
+    symlinkSync(outside, join(cwd, 'external'), 'dir');
+    writeFileSync(join(outside, 'graph.json'), 'sentinel');
+    writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({ cacheDir: 'external' }));
+    for (const command of ['baseline', 'clear-cache']) {
+      const result = run(cwd, command);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /cacheDir must stay within the project root/);
+      assert.equal(readFileSync(join(outside, 'graph.json'), 'utf8'), 'sentinel');
+    }
+    writeFileSync(join(cwd, 'affected-node-test.config.json'), '{}');
+    const plan = run(cwd, 'affected-first', 'HEAD', '--phase', 'affected', '--plan', 'external/plan.json');
+    assert.equal(plan.status, 1);
+    assert.match(plan.stderr, /--plan must be a project-relative path within the project root/);
+    assert.equal(existsSync(join(outside, 'plan.json')), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
 test('workspace baseline runs configured projects with isolated caches', () => {
   const cwd = makeWorkspace();
   try {
@@ -909,6 +935,36 @@ test('workspace baseline runs configured projects with isolated caches', () => {
     assert.equal(existsSync(join(cwd, 'packages', 'b', '.affected-tests', 'graph.json')), false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('workspace rejects symlinked project, cache, and plan escapes', {
+  skip: process.platform === 'win32' ? 'Symlink creation requires Windows developer privileges.' : false,
+}, () => {
+  const cwd = makeWorkspace();
+  const outside = mkdtempSync(join(tmpdir(), 'affected-workspace-external-'));
+  try {
+    symlinkSync(outside, join(cwd, 'external'), 'dir');
+    writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({ projects: ['external'] }));
+    const project = run(cwd, 'baseline');
+    assert.equal(project.status, 1);
+    assert.match(project.stderr, /Workspace project root must stay below the workspace root/);
+
+    writeFileSync(join(cwd, 'affected-node-test.config.json'), JSON.stringify({ projects: ['packages/a', 'packages/b'] }));
+    symlinkSync(outside, join(cwd, 'packages', 'a', 'external'), 'dir');
+    writeFileSync(join(cwd, 'packages', 'a', 'affected-node-test.config.json'), JSON.stringify({ cacheDir: 'external' }));
+    const cache = run(cwd, 'baseline');
+    assert.equal(cache.status, 1);
+    assert.match(cache.stderr, /cacheDir must stay within the project root/);
+
+    writeFileSync(join(cwd, 'packages', 'a', 'affected-node-test.config.json'), '{}');
+    const plan = run(cwd, 'affected-first', 'HEAD', '--phase', 'affected', '--plan', 'external/plan.json');
+    assert.equal(plan.status, 1);
+    assert.match(plan.stderr, /--plan must be a workspace-relative path within the workspace root/);
+    assert.equal(existsSync(join(outside, 'plan.json')), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
   }
 });
 

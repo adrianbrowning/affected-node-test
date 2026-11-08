@@ -11,6 +11,7 @@ import type { CommandName } from './cli-help.ts';
 import { isNodeError } from './errors.ts';
 import { terminateProcessTree } from './process-control.ts';
 import { writeJsonAtomically } from './cache.ts';
+import { isContainedPath } from './contained-path.ts';
 
 export type WorkspaceProject = {
   cacheDirectoryPath: string;
@@ -175,7 +176,7 @@ export function resolveWorkspaceProjects({ root, projects }: { projects: string[
     }
     const projectRoot = resolve(root, configuredRoot);
     const projectPath = relative(root, projectRoot);
-    if (!projectPath || projectPath === '..' || projectPath.startsWith(`..${sep}`)) {
+    if (!projectPath || !isContainedPath(root, projectRoot)) {
       throw new Error(`Workspace project root must stay below the workspace root: ${configuredRoot}`);
     }
     let stats;
@@ -187,6 +188,9 @@ export function resolveWorkspaceProjects({ root, projects }: { projects: string[
     }
     if (!stats.isDirectory()) throw new Error(`Workspace project root is not a directory: ${configuredRoot}`);
     const projectConfig = loadProjectConfig(projectRoot);
+    if (isAbsolute(projectConfig.cacheDir) || !isContainedPath(projectRoot, resolve(projectRoot, projectConfig.cacheDir))) {
+      throw new Error(`Workspace project cacheDir must stay within the project root: ${configuredRoot}`);
+    }
     const cacheDirectoryPath = normal(relative(projectRoot, resolve(projectRoot, projectConfig.cacheDir)));
     return { cacheDirectoryPath, path: normal(projectPath), root: projectRoot };
   }).sort((a, b) => a.path.localeCompare(b.path));
@@ -293,8 +297,7 @@ function runWorkspaceAffectedFirst({ root, projects, args, cliPath }: {
   }
   const workspacePlanPath = split.plan ? resolve(root, split.plan) : undefined;
   if (workspacePlanPath) {
-    const relativePlan = relative(root, workspacePlanPath);
-    if (isAbsolute(split.plan ?? '') || relativePlan === '..' || relativePlan.startsWith(`..${sep}`)) {
+    if (isAbsolute(split.plan ?? '') || !isContainedPath(root, workspacePlanPath)) {
       throw new Error('--plan must be a workspace-relative path within the workspace root.');
     }
   }
