@@ -1,6 +1,9 @@
 {
+  "extends": "@gingacodemonkey/config/tsc/no-dom/library",
   "compilerOptions": {
     "erasableSyntaxOnly": true,
+    "noImplicitReturns": false,
+    "noUncheckedIndexedAccess": false,
     "module": "nodenext",
     "noEmit": true,
     "noUnusedLocals": true,
@@ -9,8 +12,9 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "esnext",
+    "tsBuildInfoFile": "./node_modules/.cache/affected-node-test-typecheck.tsbuildinfo",
     "types": ["node"],
     "verbatimModuleSyntax": true
   },
-  "include": ["bin/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "test/**/*.ts"]
+  "include": ["eslint.config.ts", "bin/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "test/**/*.ts"]
 }

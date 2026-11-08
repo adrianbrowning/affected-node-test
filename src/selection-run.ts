@@ -1,4 +1,4 @@
-import { dependencyPathForTest } from './dependency-graph.ts';
+import { dependencyPathsForTest } from './dependency-graph.ts';
 import { matchesPatterns } from './project-config.ts';
 import type { DependencyRecord, DependencyState } from './dependency-record.ts';
 import type { ProjectConfig } from './project-config.ts';
@@ -104,7 +104,7 @@ export function selectTestsForFiles({ config, files, record, tests }: {
       reason: { file, kind: 'force-rerun-trigger', pattern },
     };
   }
-  const configurationFiles = files.filter((path) => /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|node_modules\/|tsconfig[^/]*\.json|\.npmrc|\.node-version|\.nvmrc)$/.test(path));
+  const configurationFiles = files.filter((path) => /(^|\/)(package(-lock)?\.json|pnpm-(?:lock|workspace)\.yaml|yarn\.lock|node_modules\/|tsconfig[^/]*\.json|\.npmrc|\.node-version|\.nvmrc)$/.test(path));
   if (configurationFiles.length) {
     return {
       kind: 'baseline',
@@ -180,8 +180,10 @@ export function selectTestsForFiles({ config, files, record, tests }: {
     messages.push(`Watch trigger matched ${[...watchTriggeredChanges].join(', ')}; selected ${watchTriggeredTests.size} mapped test file(s).`);
   }
   for (const test of tests) {
+    if (!files.length) break;
+    const paths = dependencyPathsForTest(record.graph[test] ?? [], test);
     for (const file of files) {
-      const path = dependencyPathForTest(record.graph[test] ?? [], test, file);
+      const path = paths.get(file);
       if (!path) continue;
       selected.add(test);
       reasons.add(test, { file, kind: 'dependency', path });

@@ -39,9 +39,10 @@
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json && node --input-type=module -e \"import { chmodSync } from 'node:fs'; chmodSync('dist/bin/affected-node-test.js', 0o755)\"",
-    "check:full": "pnpm docs:check && pnpm typecheck && pnpm build && pnpm test",
+    "check:full": "pnpm docs:check && pnpm typecheck && pnpm lint && pnpm build && pnpm test",
     "docs:check": "mdcode update --quiet --check README.md",
     "docs:update": "mdcode update --quiet --apply README.md",
+    "lint": "eslint eslint.config.ts \"{bin,scripts,src,test}/**/*.ts\" --max-warnings=0",
     "prepack": "pnpm build",
     "review:performance": "pnpm build && node scripts/release-benchmark.ts",
     "test": "node --test test/*.test.ts",
@@ -56,9 +57,12 @@
     "acorn": "8.19.0"
   },
   "devDependencies": {
+    "@gingacodemonkey/config": "0.1.0",
     "@types/node": "^26.6.6",
+    "@unrs/resolver-binding-wasm32-wasi": "1.13.0",
+    "eslint": "^9.39.5",
     "mdcode-ts": "0.1.0",
-    "typescript": "5.9.3",
+    "typescript": "6.0.3",
     "yaml": "2.9.1"
   }
 }

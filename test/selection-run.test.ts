@@ -87,6 +87,17 @@ test('file selection returns normalized targeted and conservative outcomes', () 
   });
 
   assert.deepEqual(selectTestsForFiles({
+    config,
+    files: ['pnpm-workspace.yaml'],
+    record,
+    tests,
+  }), {
+    kind: 'baseline',
+    message: 'Project configuration changed; running full suite.',
+    reason: { files: ['pnpm-workspace.yaml'], kind: 'project-configuration' },
+  });
+
+  assert.deepEqual(selectTestsForFiles({
     config: {
       ...config,
       watchTriggerPatterns: [{ pattern: 'fixtures/**', tests: ['test/missing*'] }],
@@ -142,6 +153,25 @@ test('file selection returns normalized targeted and conservative outcomes', () 
       'test/b.test.mjs': [{ kind: 'unrecorded-test' }],
     },
     tests: ['test/b.test.mjs'],
+  });
+});
+
+test('multiple changed files retain one dependency reason and path per match', () => {
+  assert.deepEqual(selectTestsForFiles({
+    config,
+    files: ['src/a.mjs', 'src/shared.mjs'],
+    record: { ...record, failedTests: [] },
+    tests,
+  }), {
+    kind: 'selected',
+    messages: [],
+    reasons: {
+      'test/a.test.mjs': [
+        { file: 'src/a.mjs', kind: 'dependency', path: ['test/a.test.mjs', 'src/a.mjs'] },
+        { file: 'src/shared.mjs', kind: 'dependency', path: ['test/a.test.mjs', 'src/a.mjs', 'src/shared.mjs'] },
+      ],
+    },
+    tests: ['test/a.test.mjs'],
   });
 });
 
