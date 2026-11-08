@@ -10,8 +10,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 
 function runNpm(args: string[], cwd: string) {
   if (process.platform !== 'win32') return spawnSync('npm', args, { cwd, encoding: 'utf8' });
-  const command = `npm ${args.map((argument) => `"${argument.replaceAll('"', '""')}"`).join(' ')}`;
-  return spawnSync('cmd.exe', ['/d', '/s', '/c', command], { cwd, encoding: 'utf8' });
+  return spawnSync('cmd.exe', ['/d', '/s', '/c', 'npm', ...args], { cwd, encoding: 'utf8' });
 }
 
 test('the published package and checked quickstart use the affected-node-test identity', () => {
