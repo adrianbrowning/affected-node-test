@@ -8,15 +8,12 @@ const config: Linter.Config[] = [
     // Preserve the existing CLI, graph, and TypeScript conventions during adoption.
     rules: {
       '@typescript-eslint/array-type': 'off',
-      '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/promise-function-async': 'off',
-      'de-morgan/no-negated-disjunction': 'off',
       'no-await-in-loop': 'off',
       'no-console': 'off',
       'promise/param-names': 'off',
       'sonarjs/cognitive-complexity': 'off',
       'sonarjs/no-alphabetical-sort': 'off',
-      'sonarjs/no-nested-conditional': 'off',
       'sonarjs/no-os-command-from-path': 'off',
     },
   },

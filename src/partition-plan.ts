@@ -86,8 +86,8 @@ export function parsePartitionPlan(value: unknown): PartitionPlan {
   const plan = value as Record<string, unknown>;
   const states = ['affected-failed', 'affected-passed', 'complete', 'planned', 'remaining-failed'];
   if (plan.schemaVersion !== 1 || !states.includes(String(plan.state)) ||
-      !(plan.ref === null || typeof plan.ref === 'string') ||
-      !(plan.comparisonBase === null || typeof plan.comparisonBase === 'string') ||
+      (plan.ref !== null && typeof plan.ref !== 'string') ||
+      (plan.comparisonBase !== null && typeof plan.comparisonBase !== 'string') ||
       typeof plan.changesFingerprint !== 'string' || typeof plan.config !== 'string' ||
       typeof plan.head !== 'string' || typeof plan.node !== 'string' || typeof plan.projectPath !== 'string' ||
       typeof plan.fallback !== 'boolean' || !isPathArray(plan.changes) || !isPathArray(plan.tests) ||

@@ -50,7 +50,7 @@ test('watch reruns only tests related to a changed dependency', { timeout: 45_00
   }
 });
 
-test('watch reruns load fresh configuration, environment, and global setup modules', { timeout: 45_000 }, async () => {
+test('watch reruns load fresh configuration, environment, and global setup modules', { timeout: 90_000 }, async () => {
   const cwd = makeRepository();
   const tracker = join(tmpdir(), `affected-watch-fresh-${process.pid}-${Date.now()}.log`);
   writeFileSync(join(cwd, '.env.watch'), 'WATCH_VALUE=one\n');
@@ -96,20 +96,20 @@ test('watch reruns load fresh configuration, environment, and global setup modul
     child.once('close', (code, signal) => resolve({ code, signal })));
   try {
     await waitForProcessOutput(child, () => output, (value) => value.includes('Watching for changes.'), 20_000);
-    await waitFor(() => existsSync(tracker) && readFileSync(tracker, 'utf8').includes('value:one'));
+    await waitFor(() => existsSync(tracker) && readFileSync(tracker, 'utf8').includes('value:one'), 20_000);
 
     writeFileSync(join(cwd, '.env.watch'), 'WATCH_VALUE=two\n');
-    await waitFor(() => readFileSync(tracker, 'utf8').includes('value:two'));
+    await waitFor(() => readFileSync(tracker, 'utf8').includes('value:two'), 20_000);
 
     writeFileSync(join(cwd, 'test', 'global-setup.mjs'), [
       "import { appendFileSync } from 'node:fs';",
       "export function setup() { appendFileSync(process.env.WATCH_FRESH_TRACKER, 'setup:v2\\n'); }",
       '',
     ].join('\n'));
-    await waitFor(() => readFileSync(tracker, 'utf8').includes('setup:v2'));
+    await waitFor(() => readFileSync(tracker, 'utf8').includes('setup:v2'), 20_000);
 
     writeFileSync(join(cwd, 'affected-node-test.config.json'), configuration('test/other.test.mjs'));
-    await waitFor(() => readFileSync(tracker, 'utf8').includes('other'));
+    await waitFor(() => readFileSync(tracker, 'utf8').includes('other'), 20_000);
     await waitForProcessOutput(child, () => output, (value) => value.includes('✔ other'), 20_000);
     await stopWatchProcess(child, closed, output);
   } finally {

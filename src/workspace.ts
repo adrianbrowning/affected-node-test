@@ -251,7 +251,7 @@ function readWorkspacePartitionPlan(path: string): WorkspacePartitionPlan {
   const plan = value as Record<string, unknown>;
   if (plan.schemaVersion !== 1 || !Array.isArray(plan.changes) ||
       plan.changes.some((file) => typeof file !== 'string') || typeof plan.changesFingerprint !== 'string' ||
-      typeof plan.fallback !== 'boolean' || !(plan.ref === null || typeof plan.ref === 'string') ||
+      typeof plan.fallback !== 'boolean' || (plan.ref !== null && typeof plan.ref !== 'string') ||
       !Array.isArray(plan.projects) || plan.projects.some((project) => !project || typeof project !== 'object' ||
         Array.isArray(project) || typeof (project as Record<string, unknown>).path !== 'string' ||
         !('plan' in project))) {

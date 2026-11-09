@@ -308,12 +308,14 @@ export function createSelectionExecution({ root, cachePath, command, projectConf
     }
     await executeSelectionOutcome(tests, (saved) => {
       const selection = selectTestsForFiles({ config: projectConfig, files: changes, record: saved, tests });
+      let contextMessages: string[] = [];
+      if (changes.length) {
+        contextMessages = [`Changed files: ${changes.join(', ')}`];
+      } else if (selection.kind === 'selected' && selection.tests.length) {
+        contextMessages = [`No changed files; rerunning ${saved.failedTests.length} previously failing test file(s).`];
+      }
       return {
-        contextMessages: changes.length
-          ? [`Changed files: ${changes.join(', ')}`]
-          : selection.kind === 'selected' && selection.tests.length
-            ? [`No changed files; rerunning ${saved.failedTests.length} previously failing test file(s).`]
-            : [],
+        contextMessages,
         emptyMessage: changes.length ? 'No affected tests found.' : 'No changed files.',
         selection,
       };

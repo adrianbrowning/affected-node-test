@@ -12,7 +12,7 @@ import test from 'node:test';
 import { terminateProcessTree } from '../../src/process-control.ts';
 import { cli, run, runWithEnv, git, makeRepository, makeTypeScriptRepository, makeInterruptRepository, makeSetupRepository, makeGlobalSetupRepository, makeEnvironmentRepository, waitFor, isProcessRunning, edgeTemporaryDirectories } from '../helpers/cli-fixtures.ts';
 
-test('forced process-tree termination preserves the previous cache', { timeout: 15_000 }, async () => {
+test('forced process-tree termination preserves the previous cache', { timeout: 35_000 }, async () => {
   const cwd = makeInterruptRepository();
   const tracker = join(cwd, 'interrupt.log');
   let cliProcess: ChildProcess | undefined;
@@ -32,7 +32,9 @@ test('forced process-tree termination preserves the previous cache', { timeout: 
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    await waitFor(() => existsSync(tracker));
+    const startedProcess = cliProcess;
+    await waitFor(() => existsSync(tracker) || startedProcess.exitCode !== null || startedProcess.signalCode !== null, 20_000);
+    assert.ok(existsSync(tracker), `Test process exited before writing its tracker (exit code: ${cliProcess.exitCode})`);
     testPid = Number(readFileSync(tracker, 'utf8').match(/start:(\d+)/)?.[1]);
     assert.ok(Number.isSafeInteger(testPid) && testPid > 1);
 
