@@ -22,9 +22,11 @@ const config: Linter.Config[] = [
   },
   {
     files: ['test/**/*.ts'],
-    // node:test registration and fixture assertions use these forms intentionally.
+    // node:test owns the promises returned by top-level test registration.
     rules: {
-      '@typescript-eslint/no-floating-promises': 'off',
+      '@typescript-eslint/no-floating-promises': ['error', {
+        allowForKnownSafeCalls: [{ from: 'package', name: 'test', package: 'node:test' }],
+      }],
       '@typescript-eslint/no-unnecessary-type-assertion': 'off',
       'big-o/no-array-lookup-in-loop': 'off',
       'no-useless-escape': 'off',
