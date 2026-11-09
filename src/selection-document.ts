@@ -46,13 +46,15 @@ function createSelectionDocument({
 }: SelectionDocumentOptions) {
   const selected = selection?.kind === 'selected';
   const tests = selected ? selection.tests : allTests;
+  let outcome: 'full-suite' | 'no-tests' | 'selected' = 'full-suite';
+  if (selected) outcome = tests.length ? 'selected' : 'no-tests';
   return {
     schemaVersion: 1,
     mode,
     command,
     provider: selectionProvider(command),
     projectRoot,
-    outcome: selected ? (tests.length ? 'selected' : 'no-tests') : 'full-suite',
+    outcome,
     tests,
     totalTests: allTests.length,
     reasons: selected ? selection.reasons : {},

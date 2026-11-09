@@ -35,22 +35,25 @@ async function runProjectProcesses(jobs: ProjectInvocation[], cliPath: string) {
     while (next < jobs.length) {
       const index = next++;
       const job = jobs[index];
-      results[index] = await new Promise<ProjectResult>((resolveResult, rejectResult) => {
+      results[index] = await new Promise<ProjectResult>((resolve, reject) => {
         const child = spawn(process.execPath, [cliPath, job.command, ...job.args], {
           cwd: job.project.root, env: job.env ?? process.env, stdio: ['ignore', 'pipe', 'pipe'],
         });
         let stdout = '';
         let stderr = '';
+        // A failed spawn can leave piped streams absent.
+        /* eslint-disable @typescript-eslint/no-unnecessary-condition */
         child.stdout?.setEncoding('utf8');
         child.stderr?.setEncoding('utf8');
         child.stdout?.on('data', (chunk: string) => { stdout += chunk; });
         child.stderr?.on('data', (chunk: string) => { stderr += chunk; });
-        child.once('error', rejectResult);
-        child.once('close', (status) => resolveResult({ status: status ?? 1, stdout, stderr }));
+        /* eslint-enable @typescript-eslint/no-unnecessary-condition */
+        child.once('error', reject);
+        child.once('close', (status) => resolve({ status: status ?? 1, stdout, stderr }));
       });
     }
   }
-  await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, () => worker()));
+  await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, worker));
   return results;
 }
 const supportedCommands: WorkspaceCommand[] = [
@@ -93,12 +96,12 @@ function prefixLines(stream: Readable, destination: Writable, projectPath: strin
   };
 }
 
-function runWorkspaceWatch({ projects, args, cliPath }: {
+async function runWorkspaceWatch({ projects, args, cliPath }: {
   args: string[];
   cliPath: string;
   projects: WorkspaceProject[];
 }) {
-  return new Promise<number>((resolveResult) => {
+  return new Promise<number>((resolve) => {
     const children: ReturnType<typeof spawn>[] = [];
     const readyProjects = new Set<string>();
     let closedChildren = 0;
@@ -156,7 +159,7 @@ function runWorkspaceWatch({ projects, args, cliPath }: {
         if (closedChildren === children.length) {
           clearTimeout(forceKill);
           cleanupSignals();
-          resolveResult(exitCode);
+          resolve(exitCode);
         }
       });
     }
@@ -248,7 +251,7 @@ function readWorkspacePartitionPlan(path: string): WorkspacePartitionPlan {
   const plan = value as Record<string, unknown>;
   if (plan.schemaVersion !== 1 || !Array.isArray(plan.changes) ||
       plan.changes.some((file) => typeof file !== 'string') || typeof plan.changesFingerprint !== 'string' ||
-      typeof plan.fallback !== 'boolean' || !(plan.ref === null || typeof plan.ref === 'string') ||
+      typeof plan.fallback !== 'boolean' || (plan.ref !== null && typeof plan.ref !== 'string') ||
       !Array.isArray(plan.projects) || plan.projects.some((project) => !project || typeof project !== 'object' ||
         Array.isArray(project) || typeof (project as Record<string, unknown>).path !== 'string' ||
         !('plan' in project))) {
@@ -274,9 +277,9 @@ async function runWorkspaceAffectedFirst({ root, projects, options, cliPath }: {
   const stored = phase === 'remaining' && workspacePlanPath
     ? readWorkspacePartitionPlan(workspacePlanPath)
     : undefined;
-  const ref = stored?.ref ?? positionals[0];
+  const ref = stored?.ref ?? positionals.at(0);
   const excludePath = workspacePlanPath ? normal(relative(root, workspacePlanPath)) : undefined;
-  const changes = workspaceAffectedChanges({ root, projects, ref: ref ?? undefined, excludePath });
+  const changes = workspaceAffectedChanges({ root, projects, ref, excludePath });
   if (stored && (stored.fallback !== changes.fallback ||
       JSON.stringify(stored.changes) !== JSON.stringify(changes.files) ||
       stored.changesFingerprint !== repositoryFilesFingerprint(root, changes.files))) {
@@ -338,7 +341,7 @@ async function runWorkspaceAffectedFirst({ root, projects, options, cliPath }: {
       if (phase === 'affected' || result.status === 0) {
         embedded.set(item.project.path, JSON.parse(readFileSync(resolve(item.project.root, item.path), 'utf8')));
       }
-      if (result.status !== 0) return result.status ?? 1;
+      if (result.status !== 0) return result.status;
     }
     return 0;
   };

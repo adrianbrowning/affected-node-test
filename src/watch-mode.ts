@@ -19,8 +19,8 @@ export function createWatchMode({ root, cliPath, concurrency, activeChildren, is
     let stopWatching: ((signal?: InterruptSignal) => void) | undefined;
     const normal = (path: string) => path.split(sep).join('/').replace(/^\.\//, '');
   async function watchMode() {
-    const runFreshCommand = (childCommand: 'baseline' | 'related', childArgs: string[]) =>
-      new Promise<number>((resolveStatus, rejectStatus) => {
+    const runFreshCommand = async (childCommand: 'baseline' | 'related', childArgs: string[]) =>
+      new Promise<number>((resolve, reject) => {
         const child = spawn(process.execPath, [
           cliPath,
           childCommand,
@@ -36,11 +36,11 @@ export function createWatchMode({ root, cliPath, concurrency, activeChildren, is
         activeChildren.add(child);
         child.once('error', (error) => {
           activeChildren.delete(child);
-          rejectStatus(error);
+          reject(error);
         });
         child.once('close', (code) => {
           activeChildren.delete(child);
-          resolveStatus(code ?? 1);
+          resolve(code ?? 1);
         });
       });
 
@@ -65,6 +65,8 @@ export function createWatchMode({ root, cliPath, concurrency, activeChildren, is
       try {
         console.log(`Watch changes: ${files.join(', ')}`);
         const status = await runFreshCommand('related', files);
+        // Interrupt and stop state may change while the child command runs.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (status !== 0 && !getInterruptedSignal() && !stopped) {
           throw new Error(`Watch rerun exited with status ${status}.`);
         }
@@ -73,6 +75,8 @@ export function createWatchMode({ root, cliPath, concurrency, activeChildren, is
         process.exitCode = 1;
       } finally {
         running = false;
+        // A new event may have arrived while the previous command ran.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (pending.size && !stopped) {
           clearTimeout(debounce);
           debounce = setTimeout(() => void runChanges(), 100);
@@ -95,14 +99,14 @@ export function createWatchMode({ root, cliPath, concurrency, activeChildren, is
     });
     console.log('Watching for changes.');
     sendWatchReady();
-    await new Promise<void>((resolveStop) => {
+    await new Promise<void>((resolve) => {
       stopWatching = (signal?: InterruptSignal) => {
         if (stopped) return;
         stopped = true;
         clearTimeout(debounce);
         watcher.close();
         if (signal) process.exitCode = signalExitCodes[signal];
-        resolveStop();
+        resolve();
       };
     });
     stopWatching = undefined;

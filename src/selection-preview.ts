@@ -1,33 +1,28 @@
 import type { FallbackReason, SelectionOutcome, SelectionReason } from './selection-run.ts';
 
 function selectedReason(reason: SelectionReason) {
-  if (reason.kind === 'dependency') return `changed dependency: ${reason.path.join(' -> ')}`;
-  if (reason.kind === 'previous-failure') return 'previously failing test';
-  if (reason.kind === 'unrecorded-test') return 'unrecorded test';
-  if (reason.kind === 'dependency-state-change') return 'recorded dependency state changed';
-  if (reason.kind === 'unresolved-static') {
-    return `unresolved static import with code changes: ${reason.files.join(', ')}`;
+  switch (reason.kind) {
+    case 'dependency': return `changed dependency: ${reason.path.join(' -> ')}`;
+    case 'previous-failure': return 'previously failing test';
+    case 'unrecorded-test': return 'unrecorded test';
+    case 'dependency-state-change': return 'recorded dependency state changed';
+    case 'unresolved-static': return `unresolved static import with code changes: ${reason.files.join(', ')}`;
+    case 'watch-trigger': return `watch trigger ${reason.pattern} matched ${reason.file}`;
+    default: return 'unknown selection reason';
   }
-  if (reason.kind === 'watch-trigger') {
-    return `watch trigger ${reason.pattern} matched ${reason.file}`;
-  }
-  return 'unknown selection reason';
 }
 
 function fallbackReason(reason: FallbackReason | undefined) {
   if (!reason) return;
-  if (reason.kind === 'unknown-code') return `unknown code changed: ${reason.files.join(', ')}`;
-  if (reason.kind === 'project-configuration') {
-    return `project configuration changed: ${reason.files.join(', ')}`;
+  switch (reason.kind) {
+    case 'unknown-code': return `unknown code changed: ${reason.files.join(', ')}`;
+    case 'project-configuration': return `project configuration changed: ${reason.files.join(', ')}`;
+    case 'force-rerun-trigger': return `force-rerun trigger ${reason.pattern} matched ${reason.file}`;
+    case 'watch-trigger-empty':
+      return `watch trigger ${reason.pattern} matched ${reason.file} but selected no tests`;
+    case 'no-merge-base': return `no merge base with ${reason.ref}`;
+    default: return 'unknown fallback reason';
   }
-  if (reason.kind === 'force-rerun-trigger') {
-    return `force-rerun trigger ${reason.pattern} matched ${reason.file}`;
-  }
-  if (reason.kind === 'watch-trigger-empty') {
-    return `watch trigger ${reason.pattern} matched ${reason.file} but selected no tests`;
-  }
-  if (reason.kind === 'no-merge-base') return `no merge base with ${reason.ref}`;
-  return 'unknown fallback reason';
 }
 
 export function renderSelectionPreview({ allTests, selectedLabel = 'test file(s)', selection }: {

@@ -34,6 +34,8 @@ if (log && root) {
   registerHooks({
     resolve(specifier, context, nextResolve) {
       const resolved = nextResolve(specifier, context);
+      // Node passes no parent URL for an entry point.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (context.parentURL?.startsWith('file:') && resolved.url?.startsWith('file:')) {
         const parent = fileURLToPath(context.parentURL);
         const child = fileURLToPath(resolved.url);

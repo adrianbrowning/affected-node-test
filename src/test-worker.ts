@@ -37,10 +37,10 @@ export function createTestWorker({ root, hook, nodeArgs, setupFiles, globalSetup
     }
     return [parsed[0], parsed[1]];
   }
-  function graphForTest(test: string) {
+  async function graphForTest(test: string) {
     const folder = mkdtempSync(join(tmpdir(), 'affected-test-'));
     const log = join(folder, 'edges.jsonl');
-    return new Promise<GraphTestResult>((resolveResult, rejectResult) => {
+    return new Promise<GraphTestResult>((resolve, reject) => {
       const startedAt = performance.now();
       const imports = [hook, ...[...setupFiles].map((file) => join(root, file))]
         .flatMap((file) => ['--import', pathToFileURL(file).href]);
@@ -49,6 +49,8 @@ export function createTestWorker({ root, hook, nodeArgs, setupFiles, globalSetup
         { cwd: root, detached: process.platform !== 'win32', stdio: ['inherit', 'pipe', 'pipe'], env: { ...process.env,
           AFFECTED_TESTS_EDGES_FILE: log, AFFECTED_TESTS_ROOT: root } });
       activeChildren.add(child);
+      // A failed spawn can leave piped streams absent.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!child.stdout || !child.stderr) throw new Error(`Failed to capture test output for ${test}.`);
       const stdout = createOutputBuffer({ directory: folder, name: 'stdout' });
       const stderr = createOutputBuffer({ directory: folder, name: 'stderr' });
@@ -69,7 +71,7 @@ export function createTestWorker({ root, hook, nodeArgs, setupFiles, globalSetup
           ], staticGraphCache);
           edges.push(...staticGraph.edges);
           const uniqueEdges = [...new Map(edges.map((edge) => [JSON.stringify(edge), edge])).values()];
-          resolveResult({
+          resolve({
             durationMs: performance.now() - startedAt,
             edges: uniqueEdges,
             status: code === 0 ? 0 : 1,
@@ -82,7 +84,7 @@ export function createTestWorker({ root, hook, nodeArgs, setupFiles, globalSetup
           stdout.cleanup();
           stderr.cleanup();
           rmSync(folder, { recursive: true, force: true });
-          rejectResult(error);
+          reject(error);
         }
       });
     });

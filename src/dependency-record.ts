@@ -24,7 +24,7 @@ export type RecordMetadata = {
   setupFiles: string[];
 };
 export type DependencyRecord = RecordMetadata & {
-  dependencyStates: Record<string, DependencyState>;
+  dependencyStates: Partial<Record<string, DependencyState>>;
   durations: Record<string, number>;
   failedTests: string[];
   graph: DependencyGraph;
@@ -64,8 +64,7 @@ function isDependencyState(value: unknown): value is DependencyState {
 function isValidRecord(value: unknown): value is DependencyRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
-  if (!record || typeof record !== 'object' || Array.isArray(record) ||
-      typeof record.config !== 'string' || !Array.isArray(record.tests) ||
+  if (typeof record.config !== 'string' || !Array.isArray(record.tests) ||
       typeof record.projectDependencies !== 'string' ||
       !Array.isArray(record.setupDependencyFiles) || typeof record.setupDependencies !== 'string' ||
       !Array.isArray(record.setupFiles) ||

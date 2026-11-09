@@ -160,7 +160,7 @@ The checked-in root configuration limits self-hosted discovery to `test/**/*.tes
 
 README code blocks with `file=...` metadata are synchronized from checked-in examples by [mdcode-ts](https://github.com/adrianbrowning/mdcode-ts). Run `pnpm docs:update` to refresh them or `pnpm docs:check` to fail on drift.
 
-`pnpm run check:full` is the mandatory local and CI correctness gate: it checks documentation drift and runs the complete suite without affected-test selection. See [the CI gate documentation](docs/ci.md) for the supported Node matrix and required branch-protection status.
+`pnpm run check:full` is the mandatory local and CI correctness gate: it checks documentation drift, typechecks and lints the code, builds the package, and runs the complete suite without affected-test selection. See [the CI gate documentation](docs/ci.md) for the supported Node matrix and required branch-protection status.
 
 ## Configuration
 

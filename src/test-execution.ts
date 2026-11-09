@@ -29,6 +29,8 @@ export function createTestExecutor({ root, hook, nodeArgs, setupFiles, globalSet
     registerHooks({
       resolve(specifier, context, nextResolve) {
         const resolved = nextResolve(specifier, context);
+        // Node passes no parent URL for an entry point.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (recordGlobalSetupEdges && context.parentURL?.startsWith('file:') && resolved.url?.startsWith('file:')) {
           const parent = fileURLToPath(context.parentURL);
           const child = fileURLToPath(resolved.url);
@@ -110,7 +112,7 @@ export function createTestExecutor({ root, hook, nodeArgs, setupFiles, globalSet
       }
     }
     const workerCount = Math.min(concurrency, tests.length);
-    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    await Promise.all(Array.from({ length: workerCount }, worker));
     const completedTests: string[] = [];
     const durations: Record<string, number> = {};
     const failedTests: string[] = [];

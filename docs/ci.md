@@ -2,7 +2,7 @@
 
 Affected selection is a feedback optimization, not the final correctness gate. Every pull request and push to the default branch runs `pnpm run check:full` on Node 26, the minimum supported runtime, on Ubuntu and Windows.
 
-The command checks mdcode-synchronized documentation, strictly typechecks the TypeScript development sources and tests, emits the publishable JavaScript artifact, and runs every integration test. It deliberately does not invoke `affected` or `since-last-run`.
+The command checks mdcode-synchronized documentation, strictly typechecks and lints the TypeScript development sources and tests, emits the publishable JavaScript artifact, and runs every integration test. It deliberately does not invoke `affected` or `since-last-run`.
 
 ## Required branch-protection check
 
