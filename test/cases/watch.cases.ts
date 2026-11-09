@@ -153,8 +153,8 @@ test(`${signal} stops active test processes and preserves the cache`, {
     testPid = Number(/start:(\d+)/.exec(readFileSync(tracker, 'utf8'))?.[1]);
     assert.ok(Number.isSafeInteger(testPid) && testPid > 1);
 
-    const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit) =>
-      cliProcess?.once('exit', (code, signal) => resolveExit({ code, signal })));
+    const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+      cliProcess?.once('exit', (code, signal) => resolve({ code, signal })));
     cliProcess.kill(signal);
     const result = await exited;
 

@@ -40,7 +40,7 @@ export function createTestWorker({ root, hook, nodeArgs, setupFiles, globalSetup
   async function graphForTest(test: string) {
     const folder = mkdtempSync(join(tmpdir(), 'affected-test-'));
     const log = join(folder, 'edges.jsonl');
-    return new Promise<GraphTestResult>((resolveResult, rejectResult) => {
+    return new Promise<GraphTestResult>((resolve, reject) => {
       const startedAt = performance.now();
       const imports = [hook, ...[...setupFiles].map((file) => join(root, file))]
         .flatMap((file) => ['--import', pathToFileURL(file).href]);
@@ -71,7 +71,7 @@ export function createTestWorker({ root, hook, nodeArgs, setupFiles, globalSetup
           ], staticGraphCache);
           edges.push(...staticGraph.edges);
           const uniqueEdges = [...new Map(edges.map((edge) => [JSON.stringify(edge), edge])).values()];
-          resolveResult({
+          resolve({
             durationMs: performance.now() - startedAt,
             edges: uniqueEdges,
             status: code === 0 ? 0 : 1,
@@ -84,7 +84,7 @@ export function createTestWorker({ root, hook, nodeArgs, setupFiles, globalSetup
           stdout.cleanup();
           stderr.cleanup();
           rmSync(folder, { recursive: true, force: true });
-          rejectResult(error);
+          reject(error);
         }
       });
     });

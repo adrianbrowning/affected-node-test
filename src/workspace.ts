@@ -35,7 +35,7 @@ async function runProjectProcesses(jobs: ProjectInvocation[], cliPath: string) {
     while (next < jobs.length) {
       const index = next++;
       const job = jobs[index];
-      results[index] = await new Promise<ProjectResult>((resolveResult, rejectResult) => {
+      results[index] = await new Promise<ProjectResult>((resolve, reject) => {
         const child = spawn(process.execPath, [cliPath, job.command, ...job.args], {
           cwd: job.project.root, env: job.env ?? process.env, stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -48,8 +48,8 @@ async function runProjectProcesses(jobs: ProjectInvocation[], cliPath: string) {
         child.stdout?.on('data', (chunk: string) => { stdout += chunk; });
         child.stderr?.on('data', (chunk: string) => { stderr += chunk; });
         /* eslint-enable @typescript-eslint/no-unnecessary-condition */
-        child.once('error', rejectResult);
-        child.once('close', (status) => resolveResult({ status: status ?? 1, stdout, stderr }));
+        child.once('error', reject);
+        child.once('close', (status) => resolve({ status: status ?? 1, stdout, stderr }));
       });
     }
   }
@@ -101,7 +101,7 @@ async function runWorkspaceWatch({ projects, args, cliPath }: {
   cliPath: string;
   projects: WorkspaceProject[];
 }) {
-  return new Promise<number>((resolveResult) => {
+  return new Promise<number>((resolve) => {
     const children: ReturnType<typeof spawn>[] = [];
     const readyProjects = new Set<string>();
     let closedChildren = 0;
@@ -159,7 +159,7 @@ async function runWorkspaceWatch({ projects, args, cliPath }: {
         if (closedChildren === children.length) {
           clearTimeout(forceKill);
           cleanupSignals();
-          resolveResult(exitCode);
+          resolve(exitCode);
         }
       });
     }

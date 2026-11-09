@@ -10,7 +10,6 @@ const config: Linter.Config[] = [
       '@typescript-eslint/array-type': 'off',
       'no-await-in-loop': 'off',
       'no-console': 'off',
-      'promise/param-names': 'off',
       'sonarjs/cognitive-complexity': 'off',
       'sonarjs/no-alphabetical-sort': 'off',
       'sonarjs/no-os-command-from-path': 'off',

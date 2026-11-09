@@ -20,7 +20,7 @@ export function createWatchMode({ root, cliPath, concurrency, activeChildren, is
     const normal = (path: string) => path.split(sep).join('/').replace(/^\.\//, '');
   async function watchMode() {
     const runFreshCommand = async (childCommand: 'baseline' | 'related', childArgs: string[]) =>
-      new Promise<number>((resolveStatus, rejectStatus) => {
+      new Promise<number>((resolve, reject) => {
         const child = spawn(process.execPath, [
           cliPath,
           childCommand,
@@ -36,11 +36,11 @@ export function createWatchMode({ root, cliPath, concurrency, activeChildren, is
         activeChildren.add(child);
         child.once('error', (error) => {
           activeChildren.delete(child);
-          rejectStatus(error);
+          reject(error);
         });
         child.once('close', (code) => {
           activeChildren.delete(child);
-          resolveStatus(code ?? 1);
+          resolve(code ?? 1);
         });
       });
 
@@ -99,14 +99,14 @@ export function createWatchMode({ root, cliPath, concurrency, activeChildren, is
     });
     console.log('Watching for changes.');
     sendWatchReady();
-    await new Promise<void>((resolveStop) => {
+    await new Promise<void>((resolve) => {
       stopWatching = (signal?: InterruptSignal) => {
         if (stopped) return;
         stopped = true;
         clearTimeout(debounce);
         watcher.close();
         if (signal) process.exitCode = signalExitCodes[signal];
-        resolveStop();
+        resolve();
       };
     });
     stopWatching = undefined;
