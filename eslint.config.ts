@@ -8,7 +8,6 @@ const config: Linter.Config[] = [
     // Preserve the existing CLI, graph, and TypeScript conventions during adoption.
     rules: {
       '@typescript-eslint/array-type': 'off',
-      '@typescript-eslint/promise-function-async': 'off',
       'no-await-in-loop': 'off',
       'no-console': 'off',
       'promise/param-names': 'off',

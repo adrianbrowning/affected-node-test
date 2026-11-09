@@ -19,7 +19,7 @@ export function createWatchMode({ root, cliPath, concurrency, activeChildren, is
     let stopWatching: ((signal?: InterruptSignal) => void) | undefined;
     const normal = (path: string) => path.split(sep).join('/').replace(/^\.\//, '');
   async function watchMode() {
-    const runFreshCommand = (childCommand: 'baseline' | 'related', childArgs: string[]) =>
+    const runFreshCommand = async (childCommand: 'baseline' | 'related', childArgs: string[]) =>
       new Promise<number>((resolveStatus, rejectStatus) => {
         const child = spawn(process.execPath, [
           cliPath,

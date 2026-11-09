@@ -112,7 +112,7 @@ export function createTestExecutor({ root, hook, nodeArgs, setupFiles, globalSet
       }
     }
     const workerCount = Math.min(concurrency, tests.length);
-    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    await Promise.all(Array.from({ length: workerCount }, worker));
     const completedTests: string[] = [];
     const durations: Record<string, number> = {};
     const failedTests: string[] = [];

@@ -53,7 +53,7 @@ async function runProjectProcesses(jobs: ProjectInvocation[], cliPath: string) {
       });
     }
   }
-  await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, () => worker()));
+  await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, worker));
   return results;
 }
 const supportedCommands: WorkspaceCommand[] = [
@@ -96,7 +96,7 @@ function prefixLines(stream: Readable, destination: Writable, projectPath: strin
   };
 }
 
-function runWorkspaceWatch({ projects, args, cliPath }: {
+async function runWorkspaceWatch({ projects, args, cliPath }: {
   args: string[];
   cliPath: string;
   projects: WorkspaceProject[];

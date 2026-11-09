@@ -37,7 +37,7 @@ export function createTestWorker({ root, hook, nodeArgs, setupFiles, globalSetup
     }
     return [parsed[0], parsed[1]];
   }
-  function graphForTest(test: string) {
+  async function graphForTest(test: string) {
     const folder = mkdtempSync(join(tmpdir(), 'affected-test-'));
     const log = join(folder, 'edges.jsonl');
     return new Promise<GraphTestResult>((resolveResult, rejectResult) => {
