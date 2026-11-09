@@ -24,11 +24,8 @@ const config: Linter.Config[] = [
       '@typescript-eslint/no-floating-promises': ['error', {
         allowForKnownSafeCalls: [{ from: 'package', name: 'test', package: 'node:test' }],
       }],
-      '@typescript-eslint/no-unnecessary-type-assertion': 'off',
       'big-o/no-array-lookup-in-loop': 'off',
-      'no-useless-escape': 'off',
       'sonarjs/no-empty-test-file': 'off',
-      'sonarjs/prefer-regexp-exec': 'off',
       'sonarjs/super-linear-regex': 'off',
     },
   },

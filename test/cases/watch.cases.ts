@@ -150,7 +150,7 @@ test(`${signal} stops active test processes and preserves the cache`, {
     cliProcess.stderr.on('data', (chunk) => { stderr += chunk; });
 
     await waitFor(() => existsSync(tracker));
-    testPid = Number(readFileSync(tracker, 'utf8').match(/start:(\d+)/)?.[1]);
+    testPid = Number(/start:(\d+)/.exec(readFileSync(tracker, 'utf8'))?.[1]);
     assert.ok(Number.isSafeInteger(testPid) && testPid > 1);
 
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit) =>

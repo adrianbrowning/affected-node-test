@@ -155,7 +155,7 @@ test('the release workflow and policy require a versioned provenance publish', (
   }
 
   const ciWorkflow = YAML.parse(readFileSync(join(root, '.github', 'workflows', 'ci.yml'), 'utf8'));
-  for (const job of Object.values(ciWorkflow.jobs) as Array<Record<string, unknown>>) {
+  for (const job of Object.values<Record<string, unknown>>(ciWorkflow.jobs)) {
     assert.equal(job['timeout-minutes'], 20);
     if (!Array.isArray(job.steps)) continue;
     for (const step of job.steps) {

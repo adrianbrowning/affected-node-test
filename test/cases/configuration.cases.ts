@@ -35,7 +35,7 @@ test('forced process-tree termination preserves the previous cache', { timeout: 
     const startedProcess = cliProcess;
     await waitFor(() => existsSync(tracker) || startedProcess.exitCode !== null || startedProcess.signalCode !== null, 20_000);
     assert.ok(existsSync(tracker), `Test process exited before writing its tracker (exit code: ${cliProcess.exitCode})`);
-    testPid = Number(readFileSync(tracker, 'utf8').match(/start:(\d+)/)?.[1]);
+    testPid = Number(/start:(\d+)/.exec(readFileSync(tracker, 'utf8'))?.[1]);
     assert.ok(Number.isSafeInteger(testPid) && testPid > 1);
 
     const closed = new Promise<void>((resolve) => cliProcess?.once('close', () => resolve()));
@@ -114,7 +114,7 @@ test('configured node arguments execute discovered TypeScript tests', () => {
     assert.match(baseline.stdout, /✔ typed value/);
     assert.match(readFileSync(join(cwd, '.affected-tests', 'graph.json'), 'utf8'), /src\/value\.ts/);
 
-    writeFileSync(join(cwd, 'src', 'value.ts'), 'export const value: number = 1; \/\/ changed\n');
+    writeFileSync(join(cwd, 'src', 'value.ts'), 'export const value: number = 1; // changed\n');
     const affected = run(cwd, 'affected', 'HEAD');
     assert.equal(affected.status, 0, affected.stderr);
     assert.match(affected.stdout, /Selected 1\/1 test file\(s\)/);
