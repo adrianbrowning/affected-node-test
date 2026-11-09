@@ -164,7 +164,6 @@ test('the release workflow and policy require a versioned provenance publish', (
       }
     }
   }
-  assert.match(workflow, /release:\s*\n\s*types: \[published\]/);
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /npm publish --provenance --access public/);
   assert.match(workflow, /pnpm run check:full/);

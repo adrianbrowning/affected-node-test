@@ -24,7 +24,6 @@ const config: Linter.Config[] = [
       }],
       'big-o/no-array-lookup-in-loop': 'off',
       'sonarjs/no-empty-test-file': 'off',
-      'sonarjs/super-linear-regex': 'off',
     },
   },
 ];
