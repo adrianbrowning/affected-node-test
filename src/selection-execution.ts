@@ -4,7 +4,7 @@ import type { CommandName } from './command-catalog.ts';
 import { configurationFingerprint } from './config.ts';
 import { dependenciesForTest } from './dependency-graph.ts';
 import { applyDependencyRun, loadDependencyRecord } from './dependency-record.ts';
-import type { DependencyGraph, DependencyRecord, DependencyRunResult, DependencyState, RecordMetadata } from './dependency-record.ts';
+import type { DependencyGraph, DependencyRecord, DependencyRunResult, DependencyState, FileState, RecordMetadata } from './dependency-record.ts';
 import { errorMessage, isNodeError } from './errors.ts';
 import { getGitChanges } from './git-changes.ts';
 import type { ProjectConfig } from './project-config.ts';
@@ -64,16 +64,24 @@ export function createSelectionExecution({ root, cachePath, command, projectConf
     }
     return [...visited].sort();
   }
-  function dependencyState(graph: DependencyGraph, test: string): DependencyState {
+  function fileState(path: string, states: Map<string, FileState>): FileState {
+    const cached = states.get(path);
+    if (cached !== undefined) return cached;
+    let state: FileState;
+    try {
+      const stats = statSync(join(root, path));
+      state = { mtimeMs: stats.mtimeMs, size: stats.size };
+    } catch (error: unknown) {
+      if (!isNodeError(error) || error.code !== 'ENOENT') throw error;
+      state = null;
+    }
+    states.set(path, state);
+    return state;
+  }
+  function dependencyState(graph: DependencyGraph, test: string, states: Map<string, FileState>): DependencyState {
     const state: DependencyState = {};
     for (const path of [...dependenciesForTest(graph[test] ?? [], test)].sort()) {
-      try {
-        const stats = statSync(join(root, path));
-        state[path] = { mtimeMs: stats.mtimeMs, size: stats.size };
-      } catch (error: unknown) {
-        if (!isNodeError(error) || error.code !== 'ENOENT') throw error;
-        state[path] = null;
-      }
+      state[path] = fileState(path, states);
     }
     return state;
   }
@@ -104,8 +112,9 @@ export function createSelectionExecution({ root, cachePath, command, projectConf
     | { exitCode: 1; status: 'failed' }
     | { exitCode: 130 | 143; signal: InterruptSignal; status: 'interrupted' };
   function finishRun(tests: string[], result: DependencyRunResult, previous?: DependencyRecord): RunStatus {
+    const states = new Map<string, FileState>();
     const outcome = applyDependencyRun(cachePath, {
-      dependencyStateForTest: dependencyState,
+      dependencyStateForTest: (graph, test) => dependencyState(graph, test, states),
       metadataForGraph: recordMetadata,
       previous,
       result,
@@ -241,23 +250,22 @@ export function createSelectionExecution({ root, cachePath, command, projectConf
     }
     return loaded.record;
   }
-  function dependencyStateChanged(state: DependencyState) {
+  function dependencyStateChanged(state: DependencyState, states: Map<string, FileState>) {
     for (const [path, previous] of Object.entries(state)) {
-      try {
-        const current = statSync(join(root, path));
-        if (!previous || current.mtimeMs !== previous.mtimeMs || current.size !== previous.size) return true;
-      } catch (error: unknown) {
-        if (!isNodeError(error) || error.code !== 'ENOENT') throw error;
-        if (previous !== null) return true;
-      }
+      const current = fileState(path, states);
+      if (current === null ? previous !== null :
+          previous === null || current.mtimeMs !== previous.mtimeMs || current.size !== previous.size) return true;
     }
     return false;
   }
   async function sinceLastRun() {
     const tests = discover();
+    const states = new Map<string, FileState>();
     await executeSelectionOutcome(tests, (saved) => ({
       emptyMessage: 'No tests changed since last run.',
-      selection: selectTestsSinceLastRun({ dependencyStateChanged, record: saved, tests }),
+      selection: selectTestsSinceLastRun({
+        dependencyStateChanged: (state) => dependencyStateChanged(state, states), record: saved, tests,
+      }),
       selectedLabel: 'test file(s) since last run',
     }));
   }
@@ -300,12 +308,14 @@ export function createSelectionExecution({ root, cachePath, command, projectConf
     }
     await executeSelectionOutcome(tests, (saved) => {
       const selection = selectTestsForFiles({ config: projectConfig, files: changes, record: saved, tests });
+      let contextMessages: string[] = [];
+      if (changes.length) {
+        contextMessages = [`Changed files: ${changes.join(', ')}`];
+      } else if (selection.kind === 'selected' && selection.tests.length) {
+        contextMessages = [`No changed files; rerunning ${saved.failedTests.length} previously failing test file(s).`];
+      }
       return {
-        contextMessages: changes.length
-          ? [`Changed files: ${changes.join(', ')}`]
-          : selection.kind === 'selected' && selection.tests.length
-            ? [`No changed files; rerunning ${saved.failedTests.length} previously failing test file(s).`]
-            : [],
+        contextMessages,
         emptyMessage: changes.length ? 'No affected tests found.' : 'No changed files.',
         selection,
       };

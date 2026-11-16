@@ -1,9 +1,12 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "declaration": false,
     "noEmit": false,
     "outDir": "./dist",
-    "rootDir": "."
+    "rootDir": ".",
+    "sourceMap": false,
+    "tsBuildInfoFile": "./node_modules/.cache/affected-node-test-build.tsbuildinfo"
   },
-  "exclude": ["scripts", "test"]
+  "exclude": ["eslint.config.ts", "scripts", "test"]
 }

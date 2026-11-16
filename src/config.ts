@@ -17,6 +17,7 @@ function isConfigurationFile(path: string) {
     name === 'package-lock.json' ||
     name === 'npm-shrinkwrap.json' ||
     name === 'pnpm-lock.yaml' ||
+    name === 'pnpm-workspace.yaml' ||
     name === 'yarn.lock' ||
     name === '.npmrc' ||
     name === '.node-version' ||

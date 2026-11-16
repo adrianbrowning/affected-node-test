@@ -26,7 +26,7 @@ test('cache writes atomically replace the destination file', () => {
         exclusiveTemporaryPath = String(target);
       }
       return originalWrite(target, data, options);
-    }) as typeof fs.writeFileSync;
+    });
     fs.renameSync = ((source: string, destination: string) => {
       assert.equal(destination, path);
       assert.equal(source, exclusiveTemporaryPath);

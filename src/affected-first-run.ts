@@ -111,12 +111,14 @@ export function createAffectedFirstRunner({ root, output, phase, plan, projectCo
   }) {
     if (output !== 'json') return;
     const exitCode = process.exitCode ?? 0;
+    let outcome: 'failed' | 'interrupted' | 'passed' = 'passed';
+    if (exitCode !== 0) outcome = getInterruptedSignal() ? 'interrupted' : 'failed';
     console.log(JSON.stringify({
       schemaVersion: 1,
       command: 'affected-first',
       mode: 'run',
       phase,
-      outcome: exitCode === 0 ? 'passed' : getInterruptedSignal() ? 'interrupted' : 'failed',
+      outcome,
       exitCode,
       partitions: {
         affected: partition.affected,

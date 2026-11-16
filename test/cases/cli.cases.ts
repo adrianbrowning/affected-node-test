@@ -110,13 +110,13 @@ test('help, version, and invalid input are useful before project configuration l
     assert.equal(invalidOption.status, 1);
     assert.match(invalidOption.stderr, /Unknown option: --wat/);
     assert.match(invalidOption.stderr, /Usage: affected-node-test baseline/);
-    assert.doesNotMatch(invalidOption.stderr, /SyntaxError|\n\s+at /);
+    assert.doesNotMatch(invalidOption.stderr, /SyntaxError|\n[ \t]+at /);
 
     const invalidCommand = run(cwd, 'wat');
     assert.equal(invalidCommand.status, 1);
     assert.match(invalidCommand.stderr, /Unknown command: wat/);
     assert.match(invalidCommand.stderr, /Usage: affected-node-test/);
-    assert.doesNotMatch(invalidCommand.stderr, /SyntaxError|\n\s+at /);
+    assert.doesNotMatch(invalidCommand.stderr, /SyntaxError|\n[ \t]+at /);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

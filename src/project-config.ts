@@ -71,8 +71,11 @@ function watchTriggerPatterns(config: Record<string, unknown>): WatchTriggerPatt
       throw new Error(`${configFileName}: ${label} must be an object.`);
     }
     const objectMapping = mapping as Record<string, unknown>;
-    const unknownKey = Object.keys(objectMapping).find((key) => !['pattern', 'tests'].includes(key));
-    if (unknownKey) throw new Error(`${configFileName}: unknown option ${label}.${unknownKey}.`);
+    for (const key of Object.keys(objectMapping)) {
+      if (key !== 'pattern' && key !== 'tests') {
+        throw new Error(`${configFileName}: unknown option ${label}.${key}.`);
+      }
+    }
     if (typeof objectMapping.pattern !== 'string' || objectMapping.pattern === '') {
       throw new Error(`${configFileName}: ${label}.pattern must be a non-empty string.`);
     }
@@ -135,7 +138,7 @@ export function loadProjectConfig(root: string): ProjectConfig {
     throw new Error(`${configFileName}: $schema must be a non-empty string.`);
   }
   const projects = stringArray(config, 'projects');
-  const projectOptions = [...knownKeys].filter((key) => !['$schema', 'projects'].includes(key));
+  const projectOptions = [...knownKeys].filter((key) => key !== '$schema' && key !== 'projects');
   if (projects.length) {
     const mixedOption = projectOptions.find((key) => Object.hasOwn(config, key));
     if (mixedOption) {

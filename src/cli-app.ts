@@ -79,8 +79,7 @@ export async function runCli(cliPath: string) {
     }
   }
   const activeChildren = new Set<ChildProcess>();
-  const signalExitCodes = { SIGINT: 130, SIGTERM: 143 } as const;
-  type InterruptSignal = keyof typeof signalExitCodes;
+  type InterruptSignal = 'SIGINT' | 'SIGTERM';
   let interruptedSignal: InterruptSignal | undefined;
   let watchController: ReturnType<typeof createWatchMode> | undefined;
   function interrupt(signal: InterruptSignal) {

@@ -13,7 +13,7 @@ export function isContainedPath(root: string, candidate: string) {
   if (!within(absoluteRoot, absoluteCandidate)) return false;
   const realRoot = realpathSync(absoluteRoot);
   let ancestor = absoluteCandidate;
-  while (true) {
+  for (;;) {
     try {
       return within(realRoot, realpathSync(ancestor));
     } catch (error: unknown) {

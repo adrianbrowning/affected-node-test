@@ -43,13 +43,13 @@ test('large worker output preserves reporting and temporary-file cleanup on pass
   try {
     const passing = run(cwd, 'baseline', '--concurrency', '1');
     assert.equal(passing.status, 0, passing.stderr);
-    assert.equal(passing.stdout.match(/spill:(x+):spill-end/)?.[1].length, 300_000);
+    assert.equal(/spill:(x+):spill-end/.exec(passing.stdout)?.[1].length, 300_000);
     assert.deepEqual(edgeTemporaryDirectories(), temporaryDirectories);
 
     writeFileSync(testPath, `${readFileSync(testPath, 'utf8')}\nthrow new Error('after spill');\n`);
     const failing = run(cwd, 'affected', '--concurrency', '1');
     assert.equal(failing.status, 1);
-    assert.equal(failing.stdout.match(/spill:(x+):spill-end/)?.[1].length, 300_000);
+    assert.equal(/spill:(x+):spill-end/.exec(failing.stdout)?.[1].length, 300_000);
     assert.match(failing.stdout, /after spill/);
     assert.deepEqual(edgeTemporaryDirectories(), temporaryDirectories);
 

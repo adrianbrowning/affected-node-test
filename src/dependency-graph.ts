@@ -1,6 +1,6 @@
 export type DependencyEdge = [parent: string, child: string];
 
-function dependencyPathsForTest(edges: DependencyEdge[], test: string) {
+export function dependencyPathsForTest(edges: DependencyEdge[], test: string) {
   const adjacency = new Map<string, Set<string>>();
   for (const [parent, child] of edges) {
     if (!adjacency.has(parent)) adjacency.set(parent, new Set());
